@@ -116,7 +116,8 @@ class Dataset:
     def labels(self) -> pd.DataFrame:
         id_cols = [x for x in self.data.columns if 'id' in x.lower() or 'split' in x.lower()]
         
-        return self.data.drop(columns=(['smiles', 'graph'] + id_cols))
+        drop_cols = [x for x in ['smiles', 'graph'] + id_cols if x in self.data.columns]
+        return self.data.drop(columns=drop_cols)
 
     def serialize_legacy(self, path):
         import json
@@ -256,10 +257,3 @@ class SmilesEmbedder(Embedder):
         return self.forward(data["smiles"])
 
 
-class GraphEmbedder(Embedder):
-    @abstractmethod
-    def forward(self, graphs):
-        pass
-    
-    def embed(self, data):
-        return self.forward(data["graph"])

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# parse
+# Parse options
 DELETE=false
 CACHE=true
 CMD=embed.py
@@ -21,10 +21,6 @@ while [[ $# -gt 0 ]]; do
             CACHE=false
             shift
             ;;
-        --clock)
-            CMD=clock.py
-            shift
-            ;;
         --embed)
             CMD=embed.py
             shift
@@ -40,44 +36,42 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-run() {
-    cd $WRAPPER_PATH
+if [ -z "$WRAPPER_PATH" ]; then
+    echo "Usage: ./embed_wrapper.sh model_wrappers/<huggingface|pytorch>"
+    exit 1
+fi
 
-    # install environment
-    if [ -d "venv" ] && [ -z "$REINSTALL" ]; then
-        source venv/bin/activate
-        export INSTALL_DEP=false
+run() {
+    # Ensure virtual environment exists using uv
+    if [ ! -d ".venv" ] || [ -n "$REINSTALL" ]; then
+        echo "Setting up virtual environment with uv..."
+        uv venv --python 3.11 .venv
+        source .venv/bin/activate
+        uv pip install -r requirements.txt
     else
-        export INSTALL_DEP=true
-        python_version=$(cat .python-version)
-        eval "$(pyenv init -)"
-        pyenv shell $python_version
-        if [ ! -d "venv" ]; then
-            python -m venv venv
-        fi
-        source venv/bin/activate
-        pip install -r ../../base_requirements.txt
+        source .venv/bin/activate
     fi
 
-    source ./init.sh
+    # Source wrapper init if available
+    if [ -f "$WRAPPER_PATH/init.sh" ]; then
+        source "$WRAPPER_PATH/init.sh"
+    fi
 
-    cd ../../
+    if [ -z "$HYDRA_EXPERIMENT" ]; then
+        HYDRA_EXPERIMENT=$(basename "$WRAPPER_PATH")
+    fi
 
     export PYTHONPATH=$PYTHONPATH:.:$WRAPPER_PATH
 
-    python -u $CMD --multirun +experiment=$HYDRA_EXPERIMENT ++cache=$CACHE
+    uv run python -u $CMD --multirun +experiment=$HYDRA_EXPERIMENT ++cache=$CACHE
 
-    echo "Done"
+    echo "Embedding completed."
 }
 
 delete() {
-    rm -rf $WRAPPER_PATH/venv
+    rm -rf .venv
+    echo "Cleaned up .venv"
 }
-
-if [ -z "$WRAPPER_PATH" ]; then
-    echo "Please provide the path to the wrapper"
-    exit 1
-fi
 
 if $DELETE; then
     delete

@@ -3,12 +3,11 @@ import logging as log
 
 from .models import get_clf_models, get_reg_models
 from .const import CV_SPLITS, N_JOBS, VERBOSITY
-from .utils import get_sklearn_scorer
+from .utils import get_sklearn_scorer, multioutput_auroc_score
 from ...common.types import EmbeddedDataset, HeadResult
 from ..common.utils import get_train_data, get_test_data
 from sklearn.model_selection import GridSearchCV
 from typing import Tuple
-from skfp.metrics import multioutput_auroc_score
 from sklearn.metrics import roc_auc_score, make_scorer
 
 

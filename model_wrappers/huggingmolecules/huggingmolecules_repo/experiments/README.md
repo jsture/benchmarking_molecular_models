@@ -1,1 +1,0 @@
-Please see the main README.md for instructions how to run scripts included in the experiments/scripts directory. 

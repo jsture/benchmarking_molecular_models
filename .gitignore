@@ -47,6 +47,4 @@ __pycache__/
 ### Output files ###
 *.db
 *.csv
-!results/*.db
-!results/*.csv
 

@@ -60,3 +60,33 @@ def get_sklearn_scorer(metric_name: str):
         )
         
     raise ValueError(f"Unknown metric name: {metric_name}")
+
+
+def multioutput_auroc_score(y_true, y_pred) -> float:
+    """
+    Computes AUROC across multiple output targets, handling NaNs per column.
+    Replaces dependency on external skfp library.
+    """
+    from sklearn.metrics import roc_auc_score
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
+    if y_true.ndim == 1 or y_true.shape[1] == 1:
+        y_t = y_true.ravel()
+        y_p = y_pred[:, 1].ravel() if (y_pred.ndim > 1 and y_pred.shape[1] > 1) else y_pred.ravel()
+        valid = ~np.isnan(y_t)
+        if len(np.unique(y_t[valid])) < 2:
+            return 0.5
+        return float(roc_auc_score(y_t[valid], y_p[valid]))
+
+    scores = []
+    for i in range(y_true.shape[1]):
+        col_true = y_true[:, i]
+        col_pred = y_pred[:, i]
+        valid = ~np.isnan(col_true)
+        if np.sum(valid) > 0 and len(np.unique(col_true[valid])) > 1:
+            try:
+                scores.append(roc_auc_score(col_true[valid], col_pred[valid]))
+            except Exception:
+                pass
+    return float(np.mean(scores)) if scores else 0.5

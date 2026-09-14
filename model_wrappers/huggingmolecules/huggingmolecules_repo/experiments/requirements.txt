@@ -1,5 +1,0 @@
-gin-config
-optuna>=2.3.0
-PyTDC
-pandas
-pytorch_lightning==1.0.6

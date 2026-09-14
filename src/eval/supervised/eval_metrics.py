@@ -7,8 +7,7 @@ from typing import Tuple
 from tdc.benchmark_group import admet_group
 from ogb.graphproppred import Evaluator
 from ...common.types import HeadResult, EvaluationResult
-from .utils import get_sklearn_scorer
-from skfp.metrics import multioutput_auroc_score
+from .utils import get_sklearn_scorer, multioutput_auroc_score
 from sklearn.metrics import roc_auc_score
 
 

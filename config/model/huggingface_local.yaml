@@ -1,0 +1,4 @@
+model_name: ./checkpoints/my_hf_model
+kwargs:
+  pooling: mean
+  batch_size: 128

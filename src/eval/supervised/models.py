@@ -6,7 +6,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import  Ridge, LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
-from skfp.distances import tanimoto_count_distance
+
 
 
 RF_CLF = {
@@ -56,7 +56,11 @@ AVAILABLE_HEADS = ["rf", "ridge", "knn"]
 
 def get_knn_distance(embeddings_dtype):
     if np.issubdtype(embeddings_dtype, np.integer):
-        return tanimoto_count_distance
+        try:
+            from skfp.distances import tanimoto_count_distance
+            return tanimoto_count_distance
+        except ImportError:
+            raise ImportError("scikit-fingerprints (skfp) is required for integer embeddings, but not installed.")
     elif np.issubdtype(embeddings_dtype, np.floating):
         return "cosine"
     else:

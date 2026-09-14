@@ -15,16 +15,14 @@ def main(cfg):
 
     os.makedirs(destination, exist_ok=True)
     filename = os.path.join(destination, f"{dataset_name}.joblib")
-    legacy_filename = os.path.join(destination, f"{dataset_name}.json")
 
-    if (os.path.exists(filename) or os.path.exists(legacy_filename)) and cfg.cache:
+    if os.path.exists(filename) and cfg.cache:
         print(f"Dataset {dataset_name} already exists at {filename}")
         return
 
     dataset = load(cfg.dataset, cfg.embedding.raw_directory)
     
     joblib.dump(dataset, filename)
-    dataset.serialize_legacy(legacy_filename)
     print(f"Dataset {dataset_name} saved to {filename}")
     
 

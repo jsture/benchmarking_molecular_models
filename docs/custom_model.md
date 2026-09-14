@@ -1,85 +1,119 @@
+# Benchmarking Local PyTorch & HuggingFace Models
 
-# Adding Custom Models
+This guide describes how to benchmark your own local PyTorch or HuggingFace model on the molecular representation learning benchmarks.
 
 ---
 
-## Structure
+## 1. Benchmarking a Local HuggingFace Model
 
-Your custom model should be defined under `model_wrappers/{your_model}`. This directory must contain at least three files: `wrapper.py`, `.python-version`, and `init.sh`. Additionally, please define a Hydra configuration in `config/experiment`.
+The `huggingface` wrapper supports any model compatible with HuggingFace `transformers` (either a local directory path with model weights/tokenizer or a HuggingFace Hub model identifier).
 
+### Quickstart with Config
 
-### .python-version
-
-This file should contain a single line with the Python version you want to use for your model. For example:
-
-```
-3.11
-```
-
-It will be used to initialize the virtual environment using pyenv.
-
-
-### wrapper.py
-
-To add a custom model, define a new wrapper class inside `wrapper.py`. The wrapper class should inherit from either [SmilesEmbedder](../src/common/types.py) or [GraphEmbedder](../src/common/types.py), depending on the type of model you are implementing. The class needs to implement the following methods:
-
-- `forward(self, smiles | graphs)`: This method should define the embedding procedure. The input is the full dataset, either in SMILES format or as a list of graphs. Please add batch processing if necessary. The output should be a numpy ndarray of shape (N, D), where N is the number of samples and D is the embedding dimension.
-    - If you want your model to support failing on some samples, please return `np.nan * D` for the samples that failed to embed. See [here](../model_wrappers/huggingmolecules/wrapper.py) for an example.
-- Property `name`: This property should return the name of the model as a string. If you're using multiple models for the same class, please make sure that the names are unique and match those defined in the Hydra config.
-
-Finally, your `wrapper.py` file should also contain a function `get_embedder()` that returns an instance of your wrapper class. This function is used to initialize the model in the embedding script. It can be as simple as:
-
-```python
-def get_embedder(name, **_kwargs):  # <-- **kwargs are important, as this function is called with other parameters, such as task (classification/regression)
-    if 'clamp' in name.lower():
-        return CLAMPEmbedder()
-    raise ValueError(f"Unknown embedder {name}")
-```
-
-
-### init.sh
-
-`init.sh` is used once for every model to initialize the `venv` with all dependencies needed, and optionally to download any model weights. The script is run via [embed_wrapper.sh](../embed_wrapper.sh). Every implementation in our benchmark uses a separate `venv` to avoid dependency conflicts.
-
-The virtual environment is provided via the `embed_wrapper.sh` script and is initialized before `init.sh` is run. You can use the `$INSTALL_DEP` variable as a flag to configure dependency installation only once.
-
-At the end, `init.sh` should provide the environment variable `HYDRA_EXPERIMENT` containing the name of the experiment in `config/experiment/`. This is used to configure the model via Hydra.
-
-
-### Hydra Configuration
-
-You can use the following template for a simple Hydra config:
+Create a config file in `config/model/my_hf_model.yaml`:
 
 ```yaml
-# @package _global_
-
-defaults:
-    - _self_
-
-model_name: your_model_name  # Unique name of the model
+model_name: /path/to/your/checkpoint_or_directory
+kwargs:
+  pooling: mean   # 'mean' (default), 'cls', or 'pooler'
+  batch_size: 128
+  max_length: 512
 ```
 
-If you want to provide multiple variants of the model, please refer to examples such as [fingerprints](../config/experiment/fingerprints.yaml) or [huggingmolecules](../config/experiment/huggingmolecules.yaml).
-
-
-## Running the Model
-
-Once you have defined your model, you can run it using the `embed_wrapper.sh` script to perform embedding on all datasets. By default, all datasets are used; you can modify this by changing the `hydra.sweeper.params.dataset` parameter. See [example here](../config/embed.yaml).
-
-Example command to run the model:
+Then run embedding and scoring:
 
 ```bash
-bash embed_wrapper.sh model_wrappers/your_model
+# Generate embeddings on benchmark datasets
+uv run python embed.py +experiment=huggingface +model=my_hf_model
+
+# Evaluate supervised heads on the generated embeddings
+uv run python score.py +experiment=huggingface model_name=my_hf_model
 ```
 
+---
 
-This will create embeddings for all datasets and store them in the embedding directory, by default: `data/embedded/dataset_name/model_name.(joblib|json)`. You can change the embedding directory by modifying the [embedding config](../config/embedding/default.yaml).
+## 2. Benchmarking a Local PyTorch Model
 
-To evaluate the scores on the datasets using the predefined model grid, please run the following command:
+The `pytorch` wrapper (`model_wrappers/pytorch/wrapper.py`) supports TorchScript models, pickled `torch.nn.Module` files, or custom PyTorch classes.
 
-```sh
-./run_scoring.sh your_model_name
+### Option A: Using a TorchScript or PyTorch Checkpoint
+
+Create a config in `config/model/my_pytorch_model.yaml`:
+
+```yaml
+model_name: my_model
+kwargs:
+  model_path: /path/to/your/model.pt
+  batch_size: 128
 ```
 
+Run embedding and scoring:
 
-After that, the results will be stored in the `data/meta.db` SQLite database.
+```bash
+uv run python embed.py +experiment=pytorch +model=my_pytorch_model
+uv run python score.py +experiment=pytorch model_name=my_model
+```
+
+### Option B: Defining a Custom PyTorch Embedder
+
+If your model requires custom featurization (e.g. custom tokenization), implement your wrapper by subclassing `SmilesEmbedder`:
+
+```python
+import torch
+import numpy as np
+from src.common.types import SmilesEmbedder
+from src.common.utils import batch, get_device
+
+class MyCustomEmbedder(SmilesEmbedder):
+    def __init__(self, model_path: str = "./checkpoints/my_model.pt", device=None):
+        self._device = get_device(device)
+        self._model = torch.load(model_path).to(self._device)
+        self._model.eval()
+
+    def process_batch(self, smiles_list):
+        # Featurize SMILES and run forward pass
+        ...
+        return embeddings_tensor  # (B, D)
+
+    def forward(self, smiles):
+        outputs = []
+        with torch.no_grad():
+            for b in batch(smiles, n=128):
+                outputs.append(self.process_batch(b).detach().cpu())
+        return torch.cat(outputs, dim=0).numpy()
+
+    @property
+    def name(self):
+        return "my_custom_model"
+```
+
+Implement `get_embedder(name, **kwargs)` in `model_wrappers/pytorch/wrapper.py` to instantiate your class:
+
+```python
+def get_embedder(name: str, **kwargs):
+    if name == "my_custom_model":
+        return MyCustomEmbedder(**kwargs)
+    return PyTorchSmilesEmbedder(model_path=name, **kwargs)
+```
+
+---
+
+## 3. Workflow Summary
+
+1. **Download Datasets**:
+   ```bash
+   uv run python download.py
+   ```
+2. **Generate Embeddings**:
+   ```bash
+   uv run python embed.py +experiment=huggingface +model=my_hf_model
+   # Or using the wrapper script:
+   ./embed_wrapper.sh model_wrappers/huggingface
+   ```
+3. **Score Embeddings**:
+   ```bash
+   uv run python score.py +experiment=huggingface model_name=my_hf_model
+   # Or using the background runner:
+   ./run_scoring.sh huggingface
+   ```
+4. Results are stored in the SQLite database at `data/meta.db`.
