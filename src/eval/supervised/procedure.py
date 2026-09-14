@@ -6,7 +6,7 @@ import logging as log
 from pathlib import Path
 from typing import Any
 
-from .const import DEFAULT_MEMORY_WEIGHT
+from .const import DEFAULT_MEMORY_WEIGHT, DEFAULT_SEED
 from .train import fit_and_eval_embedding
 from .eval_metrics import evaluate
 from .utils import get_model_version_hash
@@ -22,6 +22,7 @@ def eval_embedding(
     metric_name: str,
     model_head: str,
     cv_verbosity: int = 0,
+    random_state: int | None = DEFAULT_SEED,
 ) -> EvaluationResult:
     log.info(f"[{data.name}] [{model_head}] Training head model (metric: {metric_name})...")
     mem_wt = getattr(dataset_config, 'memory_weight', None)
@@ -36,6 +37,7 @@ def eval_embedding(
         model_head=model_head,
         memory_weight=mem_wt,
         cv_verbosity=cv_verbosity,
+        random_state=random_state,
     )
     log.info(f"[{data.name}] [{model_head}] CV training complete, best CV {metric_name}: {head_result.cv_score:.4f}")
     return evaluate(head_result, dataset_config, pred_directory)
@@ -50,6 +52,7 @@ def eval_procedure(
     override: bool = False,
     results_dir: str = "data/results",
     cv_verbosity: int = 0,
+    random_state: int | None = DEFAULT_SEED,
 ) -> ResultRecord | None:
     model_version_hash = get_model_version_hash()
     dataset_name = dataset_info.name if hasattr(dataset_info, "name") else str(dataset_info)
@@ -113,6 +116,7 @@ def eval_procedure(
         metric,
         model_head,
         cv_verbosity=cv_verbosity,
+        random_state=random_state,
     )
     log.info(f"[{dataset_name}] [{model_head}] Evaluation complete, test result: {result.metric_value}")
     
@@ -127,6 +131,7 @@ def eval_procedure(
         test_metric=float(result.metric_value),
         hyperparams=result.hyperparams,
         library_hash=model_version_hash,
+        seed=random_state,
     )
     save_result_yaml(record, results_dir)
 

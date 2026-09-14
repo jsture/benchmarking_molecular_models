@@ -49,9 +49,16 @@ def evaluate_task(
     override: bool,
     safe: bool,
     cv_verbosity: int = 0,
+    seed: int | None = 42,
 ):
     if not log.getLogger().handlers:
         log.basicConfig(level=log.INFO, format=logging_format)
+
+    if seed is not None:
+        import random
+        import numpy as np
+        random.seed(seed)
+        np.random.seed(seed)
 
     print(
         f"[{dataset_cfg.name}] [{head}] Starting evaluation for model '{model_name}' "
@@ -68,6 +75,7 @@ def evaluate_task(
             override=override,
             results_dir=embed_config.results_directory,
             cv_verbosity=cv_verbosity,
+            random_state=seed,
         )
     except Exception as e:
         if safe:
@@ -120,6 +128,12 @@ def parse_args():
         type=int,
         default=0,
         help="Verbosity level for scikit-learn cross-validation (default: 0). Use >0 for fold-by-fold logs.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for model heads and cross-validation (default: 42). Use -1 for unseeded.",
     )
     parser.add_argument(
         "--safe",
@@ -198,6 +212,13 @@ def main():
         [d.name for d in datasets_to_run],
     )
 
+    seed = args.seed if args.seed >= 0 else None
+    if seed is not None:
+        import random
+        import numpy as np
+        random.seed(seed)
+        np.random.seed(seed)
+
     tasks = [
         (cfg, head)
         for cfg in datasets_to_run
@@ -208,16 +229,17 @@ def main():
     print(f"Scoring model: '{resolved_model}'", flush=True)
     print(f"Datasets ({len(datasets_to_run)}): {', '.join(d.name for d in datasets_to_run)}", flush=True)
     print(f"Heads ({len(args.heads)}): {', '.join(args.heads)}", flush=True)
+    print(f"Seed: {seed if seed is not None else 'None (unseeded)'}", flush=True)
     print(f"Total tasks: {len(tasks)} | Concurrency (n_jobs): {args.n_jobs}", flush=True)
     print("==================================================\n", flush=True)
 
     if args.n_jobs == 1 or len(tasks) == 1:
         for cfg, head in tasks:
-            evaluate_task(cfg, head, resolved_model, embed_config, args.override, args.safe, args.cv_verbose)
+            evaluate_task(cfg, head, resolved_model, embed_config, args.override, args.safe, args.cv_verbose, seed)
     else:
         Parallel(n_jobs=args.n_jobs, backend="loky")(
             delayed(evaluate_task)(
-                cfg, head, resolved_model, embed_config, args.override, args.safe, args.cv_verbose
+                cfg, head, resolved_model, embed_config, args.override, args.safe, args.cv_verbose, seed
             )
             for cfg, head in tasks
         )

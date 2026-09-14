@@ -46,6 +46,7 @@ class ResultRecord:
     hyperparams: Dict[str, Any]
     library_hash: str
     timestamp: Optional[str] = None
+    seed: Optional[int] = None
 
     def __post_init__(self):
         if self.timestamp is None:
@@ -66,6 +67,7 @@ class ResultRecord:
             "hyperparams": json.dumps(self.hyperparams, sort_keys=True),
             "library_hash": self.library_hash,
             "timestamp": self.timestamp,
+            "seed": self.seed,
         }
 
 
@@ -152,7 +154,7 @@ def sync_csv_from_yaml(results_dir: str | Path, results_csv: str | Path) -> pd.D
         df = pd.DataFrame(columns=[
             "dataset", "task", "embedder", "head",
             "cv_metric_name", "cv_metric", "test_metric_name", "test_metric",
-            "hyperparams", "library_hash", "timestamp"
+            "hyperparams", "library_hash", "timestamp", "seed"
         ])
 
     df.to_csv(csv_path, index=False)

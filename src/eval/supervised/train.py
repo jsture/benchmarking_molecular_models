@@ -2,7 +2,7 @@ import numpy as np
 import logging as log
 
 from .models import get_clf_models, get_reg_models
-from .const import CV_SPLITS, N_JOBS, VERBOSITY
+from .const import CV_SPLITS, N_JOBS, VERBOSITY, DEFAULT_SEED
 from .utils import get_sklearn_scorer, multioutput_auroc_score
 from ...common.types import EmbeddedDataset, HeadResult
 from ..common.utils import get_train_data, get_test_data
@@ -15,14 +15,15 @@ def fit_model(X: np.ndarray, y: np.ndarray,
               task: str, metric_name: str, 
               model_head: str, memory_weight: int,
               cv_verbosity: int = VERBOSITY,
-              dataset_name: str = ""):
+              dataset_name: str = "",
+              random_state: int | None = DEFAULT_SEED):
     tag = f"[{dataset_name}] [{model_head}] " if dataset_name else f"[{model_head}] "
     if task == "classification":
         # no_outputs = y.shape[1]
         no_outputs = y.shape[1] if len(y.shape) > 1 else 1
-        models = get_clf_models(no_outputs, X.dtype)
+        models = get_clf_models(no_outputs, X.dtype, random_state=random_state)
     elif task == "regression":
-        models = get_reg_models(X.dtype)
+        models = get_reg_models(X.dtype, random_state=random_state)
     else:
         raise ValueError(f"Unknown task: {task}")
     
@@ -86,7 +87,8 @@ def fit_model(X: np.ndarray, y: np.ndarray,
 def fit_and_eval_embedding(dataset: EmbeddedDataset, 
                            metric_name: str, model_head: str,
                            memory_weight: int,
-                           cv_verbosity: int = VERBOSITY) -> HeadResult:
+                           cv_verbosity: int = VERBOSITY,
+                           random_state: int | None = DEFAULT_SEED) -> HeadResult:
     X_train, y_train = get_train_data(dataset)
     best_model = fit_model(
         X=X_train, 
@@ -97,6 +99,7 @@ def fit_and_eval_embedding(dataset: EmbeddedDataset,
         memory_weight=memory_weight,
         cv_verbosity=cv_verbosity,
         dataset_name=dataset.name,
+        random_state=random_state,
     )
     X_test, y_test = get_test_data(dataset)
     log.info(f"[{dataset.name}] [{model_head}] Shapes: train={X_train.shape}, test={X_test.shape}")

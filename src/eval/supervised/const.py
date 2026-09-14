@@ -2,3 +2,4 @@ CV_SPLITS = 5
 N_JOBS = 32
 DEFAULT_MEMORY_WEIGHT = 1 # Actual N_JOBS will be N_JOBS / memory_weight
 VERBOSITY = 0
+DEFAULT_SEED = 42

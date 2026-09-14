@@ -67,17 +67,20 @@ def get_knn_distance(embeddings_dtype):
         raise ValueError(f"Unsupported embeddings dtype: {embeddings_dtype}. Expected integer or floating point type.")
 
 
-def get_clf_models(no_output: int, embeddings_dtype):
+from .const import DEFAULT_SEED
+
+
+def get_clf_models(no_output: int, embeddings_dtype, random_state: int | None = DEFAULT_SEED):
     if no_output == 1:
-        lr_clf = LogisticRegression(n_jobs=-1)
+        lr_clf = LogisticRegression(n_jobs=-1, random_state=random_state)
         lr_params = RIDGE_CLF
     else:
-        lr_clf = MultiOutputClassifier(LogisticRegression(n_jobs=-1))
+        lr_clf = MultiOutputClassifier(LogisticRegression(n_jobs=-1, random_state=random_state))
         lr_params = RIDGE__MULTIOUTPUT_CLF
     
     return {
         "rf": {
-            "model": Pipeline([("clf", RandomForestClassifier(n_jobs=-1))]),
+            "model": Pipeline([("clf", RandomForestClassifier(n_jobs=-1, random_state=random_state))]),
             "params": RF_CLF.copy(),
         },
         "ridge": {
@@ -101,17 +104,17 @@ def get_clf_models(no_output: int, embeddings_dtype):
     }
 
 
-def get_reg_models(embeddings_dtype):
+def get_reg_models(embeddings_dtype, random_state: int | None = DEFAULT_SEED):
     return {
         "rf": {
-            "model": Pipeline([("clf", RandomForestRegressor(n_jobs=-1))]),
+            "model": Pipeline([("clf", RandomForestRegressor(n_jobs=-1, random_state=random_state))]),
             "params": RF_REG.copy(),
         },
         "ridge": {
             "model": Pipeline(
                 [
                     ("scaler", StandardScaler()),
-                    ("clf", Ridge()),
+                    ("clf", Ridge(random_state=random_state)),
                 ]
             ),
             "params": RIDGE_REG.copy(),
