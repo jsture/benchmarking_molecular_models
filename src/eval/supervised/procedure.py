@@ -21,8 +21,9 @@ def eval_embedding(
     dataset_config: Any,
     metric_name: str,
     model_head: str,
+    cv_verbosity: int = 0,
 ) -> EvaluationResult:
-    log.info("Training model")
+    log.info(f"[{data.name}] [{model_head}] Training head model (metric: {metric_name})...")
     mem_wt = getattr(dataset_config, 'memory_weight', None)
     if mem_wt is None and isinstance(dataset_config, dict):
         mem_wt = dataset_config.get('memory_weight', DEFAULT_MEMORY_WEIGHT)
@@ -33,9 +34,10 @@ def eval_embedding(
         dataset=data, 
         metric_name=metric_name, 
         model_head=model_head,
-        memory_weight=mem_wt
+        memory_weight=mem_wt,
+        cv_verbosity=cv_verbosity,
     )
-    log.info(f"Training complete, best CV result: {head_result.cv_score}")
+    log.info(f"[{data.name}] [{model_head}] CV training complete, best CV {metric_name}: {head_result.cv_score:.4f}")
     return evaluate(head_result, dataset_config, pred_directory)
 
 
@@ -47,6 +49,7 @@ def eval_procedure(
     model_head: str,
     override: bool = False,
     results_dir: str = "data/results",
+    cv_verbosity: int = 0,
 ) -> ResultRecord | None:
     model_version_hash = get_model_version_hash()
     dataset_name = dataset_info.name if hasattr(dataset_info, "name") else str(dataset_info)
@@ -54,13 +57,16 @@ def eval_procedure(
 
     if is_already_evaluated(results_dir, dataset_name, model_name, model_head):
         if not override:
-            log.info(f"Model already evaluated ({dataset_name}/{model_name}/{model_head}), skipping")
+            print(f"[{dataset_name}] [{model_head}] Already evaluated for '{model_name}', skipping.", flush=True)
+            log.info(f"[{dataset_name}] [{model_head}] Already evaluated for '{model_name}', skipping.")
             return None
-        log.warning(f"Model already evaluated ({dataset_name}/{model_name}/{model_head}), overriding")
+        print(f"[{dataset_name}] [{model_head}] Overriding previous evaluation for '{model_name}'.", flush=True)
+        log.warning(f"[{dataset_name}] [{model_head}] Overriding previous evaluation for '{model_name}'.")
         delete_result(results_dir, dataset_name, model_name, model_head)
         
     if model_head == 'knn' and 'muv' in dataset_name:
-        log.error("Skipping KNN evaluation for MUV datasets, not supported")
+        print(f"[{dataset_name}] [{model_head}] Skipping KNN evaluation for MUV (not supported).", flush=True)
+        log.warning(f"[{dataset_name}] [{model_head}] Skipping KNN evaluation for MUV (not supported).")
         return None
 
     emb_path = Path(embedded_dir)
@@ -71,27 +77,34 @@ def eval_procedure(
     legacy_filename = str(emb_path / dataset_name / f"{model_name}.json")
     
     if os.path.exists(legacy_filename):
-        log.info("Legacy embedded dataset found, converting to new format")
+        log.info(f"[{dataset_name}] Legacy embedded dataset found, converting to new format")
         embedded_data = EmbeddedDataset.deserialize_legacy(legacy_filename)
     elif not os.path.exists(embedded_filename):
-        log.error(f"Embedded dataset not found: {embedded_filename}")
+        print(f"[{dataset_name}] [{model_head}] ERROR: Embedded dataset not found at {embedded_filename}", flush=True)
+        log.error(f"[{dataset_name}] Embedded dataset not found: {embedded_filename}")
         return None
     else:
         embedded_data: EmbeddedDataset = joblib.load(embedded_filename)
 
     if embedded_data.X is None:
-        log.error("Embedded dataset is empty")
-        raise RuntimeError("Embedded dataset is empty")
+        log.error(f"[{dataset_name}] Embedded dataset is empty")
+        raise RuntimeError(f"[{dataset_name}] Embedded dataset is empty")
     
     if isinstance(embedded_data.X, torch.Tensor):
-        log.info("Converting torch.Tensor to numpy array")
+        log.info(f"[{dataset_name}] Converting torch.Tensor to numpy array")
         embedded_data.X = embedded_data.X.detach().cpu().numpy()
     
     if len(embedded_data.X.shape) == 1:
-        log.warning("Invalid X shape (1 dim), assuming invalid concatenation")
+        log.warning(f"[{dataset_name}] Invalid X shape (1 dim), assuming invalid concatenation")
         desired_samples = embedded_data.y.shape[0]
         embedded_data.X = embedded_data.X.reshape(desired_samples, -1)
-    log.info(f"Shape {embedded_data.X.shape} for dataset {embedded_data.name}, task {embedded_data.task}")
+    log.info(f"[{dataset_name}] [{model_head}] Shape {embedded_data.X.shape} for dataset {embedded_data.name}, task {embedded_data.task}")
+
+    print(
+        f"[{dataset_name}] [{model_head}] Training head on {embedded_data.X.shape[0]} samples "
+        f"(features: {embedded_data.X.shape[1]}, task: {embedded_data.task}, metric: {metric})...",
+        flush=True,
+    )
 
     result = eval_embedding(
         embedded_data,
@@ -99,8 +112,9 @@ def eval_procedure(
         dataset_info,
         metric,
         model_head,
+        cv_verbosity=cv_verbosity,
     )
-    log.info(f"Evaluation complete, test result: {result.metric_value}")
+    log.info(f"[{dataset_name}] [{model_head}] Evaluation complete, test result: {result.metric_value}")
     
     record = ResultRecord(
         dataset=embedded_data.name,
@@ -115,4 +129,11 @@ def eval_procedure(
         library_hash=model_version_hash,
     )
     save_result_yaml(record, results_dir)
+
+    print(
+        f"[{dataset_name}] [{model_head}] Finished: "
+        f"CV {metric} = {record.cv_metric:.4f} | "
+        f"Test {record.test_metric_name} = {record.test_metric:.4f}",
+        flush=True,
+    )
     return record

@@ -48,8 +48,16 @@ def evaluate_task(
     embed_config: EmbeddingConfig,
     override: bool,
     safe: bool,
+    cv_verbosity: int = 0,
 ):
-    log.info(f"Evaluating {model_name} on {dataset_cfg.name} (task: {dataset_cfg.task}, metric: {dataset_cfg.metric}) with head: {head}")
+    if not log.getLogger().handlers:
+        log.basicConfig(level=log.INFO, format=logging_format)
+
+    print(
+        f"[{dataset_cfg.name}] [{head}] Starting evaluation for model '{model_name}' "
+        f"(task: {dataset_cfg.task}, metric: {dataset_cfg.metric})...",
+        flush=True,
+    )
     try:
         eval_procedure(
             dataset_info=dataset_cfg,
@@ -59,10 +67,12 @@ def evaluate_task(
             model_head=head,
             override=override,
             results_dir=embed_config.results_directory,
+            cv_verbosity=cv_verbosity,
         )
     except Exception as e:
         if safe:
-            log.error(f"Error evaluating {model_name} on {dataset_cfg.name} with head {head}: {e}")
+            print(f"[{dataset_cfg.name}] [{head}] ERROR evaluating {model_name}: {e}", flush=True)
+            log.error(f"[{dataset_cfg.name}] [{head}] Error evaluating {model_name}: {e}")
             log.error(traceback.format_exc())
         else:
             raise
@@ -104,6 +114,12 @@ def parse_args():
         action="store_true",
         dest="override",
         help="Re-evaluate and overwrite existing results.",
+    )
+    parser.add_argument(
+        "--cv-verbose",
+        type=int,
+        default=0,
+        help="Verbosity level for scikit-learn cross-validation (default: 0). Use >0 for fold-by-fold logs.",
     )
     parser.add_argument(
         "--safe",
@@ -181,22 +197,27 @@ def main():
         args.embedded_dir,
         [d.name for d in datasets_to_run],
     )
-    log.info(f"Target model for scoring: '{resolved_model}' (input: '{args.model}')")
 
     tasks = [
         (cfg, head)
         for cfg in datasets_to_run
         for head in args.heads
     ]
-    log.info(f"Queued {len(tasks)} scoring task(s) across {len(datasets_to_run)} dataset(s) and {len(args.heads)} head(s).")
+
+    print("\n==================================================", flush=True)
+    print(f"Scoring model: '{resolved_model}'", flush=True)
+    print(f"Datasets ({len(datasets_to_run)}): {', '.join(d.name for d in datasets_to_run)}", flush=True)
+    print(f"Heads ({len(args.heads)}): {', '.join(args.heads)}", flush=True)
+    print(f"Total tasks: {len(tasks)} | Concurrency (n_jobs): {args.n_jobs}", flush=True)
+    print("==================================================\n", flush=True)
 
     if args.n_jobs == 1 or len(tasks) == 1:
         for cfg, head in tasks:
-            evaluate_task(cfg, head, resolved_model, embed_config, args.override, args.safe)
+            evaluate_task(cfg, head, resolved_model, embed_config, args.override, args.safe, args.cv_verbose)
     else:
         Parallel(n_jobs=args.n_jobs, backend="loky")(
             delayed(evaluate_task)(
-                cfg, head, resolved_model, embed_config, args.override, args.safe
+                cfg, head, resolved_model, embed_config, args.override, args.safe, args.cv_verbose
             )
             for cfg, head in tasks
         )
