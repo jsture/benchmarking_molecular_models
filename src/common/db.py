@@ -1,10 +1,11 @@
+import os
+from pathlib import Path
 from peewee import Model, Proxy, CharField, FloatField, SqliteDatabase, IntegerField
-from .types import EmbeddingConfig
 from playhouse.shortcuts import ThreadSafeDatabaseMetadata
-from hydra.utils import get_original_cwd
-from os.path import join
+from .config import EmbeddingConfig, BASE_DIR
 
 proxy = Proxy()
+
 
 class BaseModel(Model):
     class Meta:
@@ -17,12 +18,12 @@ class EmbeddingMeta(BaseModel):
     embedder = CharField()
     embedding_loc = CharField()
     embedding_time = FloatField()
-    
+
 
 class ClusterizationReport(BaseModel):
     dataset = CharField()
     embedder = CharField()
-    
+
     rand_score = FloatField(null=True)
     davies_bouldin_score = FloatField(null=True)
     noise_perc = FloatField(null=True)
@@ -32,7 +33,7 @@ class ClassificationReport(BaseModel):
     dataset = CharField()
     task = CharField()
     embedder = CharField()
-    
+
     model = CharField()
     hyperparams = CharField()
     library_hash = CharField()
@@ -48,34 +49,52 @@ class Runtime(BaseModel):
     dataset = CharField()
     embedder = CharField()
     device = CharField()
-    
+
     mean_runtime = FloatField()
     std_runtime = FloatField()
     n_samples = IntegerField()
 
 
+def init_db(config: EmbeddingConfig):
+    """Initializes the database schema once before running evaluations."""
+    db_path = str(Path(config.database) if Path(config.database).is_absolute() else BASE_DIR / config.database)
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    db = SqliteDatabase(
+        db_path,
+        timeout=60.0,
+        pragmas={'journal_mode': 'wal', 'cache_size': -1024 * 64}
+    )
+    proxy.initialize(db)
+    with db:
+        proxy.create_tables([EmbeddingMeta, Runtime, ClassificationReport, ClusterizationReport], safe=True)
+    return db
+
+
 def close_db():
-    proxy.close()
-    
-
-class Singleton(type):
-    _instances = {}
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
-        return cls._instances[cls]
+    if not proxy.is_closed():
+        proxy.close()
 
 
-class DbContex(metaclass=Singleton):
+class DbContex:
     def __init__(self, config: EmbeddingConfig):
         self._config = config
         self._database = None
-        
+
     def __enter__(self):
-        self._database = SqliteDatabase(join(get_original_cwd(), self._config.database))
+        db_path = str(Path(self._config.database) if Path(self._config.database).is_absolute() else BASE_DIR / self._config.database)
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        self._database = SqliteDatabase(
+            db_path,
+            timeout=60.0,
+            pragmas={'journal_mode': 'wal', 'cache_size': -1024 * 64}
+        )
         proxy.initialize(self._database)
-        proxy.create_tables([EmbeddingMeta, Runtime, ClassificationReport, ClusterizationReport], safe=True)
-        return None
+        if self._database.is_closed():
+            self._database.connect()
+        return self._database
 
     def __exit__(self, *args, **kwargs):
-        proxy.close()
+        if self._database and not self._database.is_closed():
+            self._database.close()
+
+

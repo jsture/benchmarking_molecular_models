@@ -1,4 +1,0 @@
-model_name: pytorch_local
-kwargs:
-  model_path: ./checkpoints/my_pytorch_model.pt
-  batch_size: 128

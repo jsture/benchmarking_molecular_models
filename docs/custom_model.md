@@ -8,26 +8,17 @@ This guide describes how to benchmark your own local PyTorch or HuggingFace mode
 
 The `huggingface` wrapper supports any model compatible with HuggingFace `transformers` (either a local directory path with model weights/tokenizer or a HuggingFace Hub model identifier).
 
-### Quickstart with Config
-
-Create a config file in `config/model/my_hf_model.yaml`:
-
-```yaml
-model_name: /path/to/your/checkpoint_or_directory
-kwargs:
-  pooling: mean   # 'mean' (default), 'cls', or 'pooler'
-  batch_size: 128
-  max_length: 512
-```
-
-Then run embedding and scoring:
+### Direct CLI Usage
 
 ```bash
-# Generate embeddings on benchmark datasets
-uv run python embed.py +experiment=huggingface +model=my_hf_model
+# Embed a single dataset or all datasets:
+uv run python embed.py --model /path/to/your/checkpoint_or_directory --dataset DILI
 
-# Evaluate supervised heads on the generated embeddings
-uv run python score.py +experiment=huggingface model_name=my_hf_model
+# Configure batch size, pooling strategy ('mean', 'cls', 'pooler'), and device:
+uv run python embed.py --model /path/to/your/checkpoint_or_directory --dataset all --batch-size 64 --pooling mean --device cuda
+
+# Evaluate supervised heads on the generated embeddings:
+uv run python score.py --model my_hf_model --dataset all --n-jobs 8
 ```
 
 ---
@@ -38,25 +29,14 @@ The `pytorch` wrapper (`model_wrappers/pytorch/wrapper.py`) supports TorchScript
 
 ### Option A: Using a TorchScript or PyTorch Checkpoint
 
-Create a config in `config/model/my_pytorch_model.yaml`:
-
-```yaml
-model_name: my_model
-kwargs:
-  model_path: /path/to/your/model.pt
-  batch_size: 128
-```
-
-Run embedding and scoring:
-
 ```bash
-uv run python embed.py +experiment=pytorch +model=my_pytorch_model
-uv run python score.py +experiment=pytorch model_name=my_model
+uv run python embed.py --framework pytorch --model /path/to/your/model.pt --dataset DILI
+uv run python score.py --model model --dataset DILI
 ```
 
 ### Option B: Defining a Custom PyTorch Embedder
 
-If your model requires custom featurization (e.g. custom tokenization), implement your wrapper by subclassing `SmilesEmbedder`:
+If your model requires custom featurization (e.g. custom tokenization, SMILES graphs to tensors, etc.), implement your wrapper by subclassing `SmilesEmbedder`:
 
 ```python
 import torch
@@ -102,18 +82,18 @@ def get_embedder(name: str, **kwargs):
 
 1. **Download Datasets**:
    ```bash
-   uv run python download.py
+   uv run python download.py --dataset all
    ```
 2. **Generate Embeddings**:
    ```bash
-   uv run python embed.py +experiment=huggingface +model=my_hf_model
-   # Or using the wrapper script:
-   ./embed_wrapper.sh model_wrappers/huggingface
+   uv run python embed.py --model DeepChem/ChemBERTa-10M-MLM --dataset all
+   # Or using the background runner:
+   ./run_embed.sh huggingface --model DeepChem/ChemBERTa-10M-MLM --dataset all
    ```
 3. **Score Embeddings**:
    ```bash
-   uv run python score.py +experiment=huggingface model_name=my_hf_model
+   uv run python score.py --model ChemBERTa-10M-MLM --dataset all --n-jobs 8
    # Or using the background runner:
-   ./run_scoring.sh huggingface
+   ./run_scoring.sh --model ChemBERTa-10M-MLM --dataset all --n-jobs 8
    ```
 4. Results are stored in the SQLite database at `data/meta.db`.

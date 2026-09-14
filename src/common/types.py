@@ -55,18 +55,7 @@ def json_numpy_obj_hook(dct):
     return dct
 
 
-@dataclass
-class EmbeddingConfig:
-    raw_directory: str
-    embedded_directory: str
-    predictions_directory: str
-    data_directory: str
-    clock_directory: str
-    database: str
-    prepared_directory: str
-    svd_directory: str
-    max_invalid_embeddings: int
-    max_samples: Optional[int] = None
+from .config import EmbeddingConfig
 
 
 @dataclass

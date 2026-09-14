@@ -1,11 +1,11 @@
 import os
 import numpy as np
 import logging as log
-
-from hydra.utils import get_original_cwd
+from pathlib import Path
 from typing import Tuple
 from tdc.benchmark_group import admet_group
 from ogb.graphproppred import Evaluator
+from ...common.config import BASE_DIR
 from ...common.types import HeadResult, EvaluationResult
 from .utils import get_sklearn_scorer, multioutput_auroc_score
 from sklearn.metrics import roc_auc_score
@@ -16,7 +16,7 @@ def evaluate_tdc(y_pred: np.ndarray, dataset_name: str) -> Tuple[str, float]:
     Returns:
         Tuple[str, float]: Tuple containing metric name and value
     """
-    grp_path = os.path.join(get_original_cwd(), "data/cache")
+    grp_path = str(BASE_DIR / "data/cache")
     os.makedirs(grp_path, exist_ok=True)
     group = admet_group(path=grp_path)
     benchmark = group.get(dataset_name)
@@ -60,11 +60,15 @@ def evaluate_sklearn(y_pred: np.ndarray, y_test: np.ndarray, metric_name: str) -
 
 
 def log_predictions(data: HeadResult, pred_directory: str):
-    print(f"Logging predictions for {data.dataset_name} dataset")
-    res_path = os.path.join(get_original_cwd(), pred_directory, data.dataset_name, data.embedder, f"{data.model}.npy")
-    print(f"Saving predictions to {res_path}")
-    os.makedirs(os.path.dirname(res_path), exist_ok=True)
-    np.save(res_path, data.y_test_pred)
+    log.info(f"Logging predictions for {data.dataset_name} dataset")
+    pred_dir = Path(pred_directory)
+    if not pred_dir.is_absolute():
+        pred_dir = BASE_DIR / pred_dir
+    res_path = pred_dir / data.dataset_name / data.embedder / f"{data.model}.npy"
+    log.info(f"Saving predictions to {res_path}")
+    os.makedirs(res_path.parent, exist_ok=True)
+    np.save(str(res_path), data.y_test_pred)
+
 
 
 def evaluate_tdc_safe(y_pred: np.ndarray, y_test: np.ndarray, dataset_name: str, fallback_metric: str) -> Tuple[str, float]:
@@ -105,7 +109,7 @@ def evaluate(data: HeadResult, dataset_config, pred_directory: str) -> Evaluatio
     
     log_predictions(data, pred_directory)
     
-    metric_name = dataset_config.metric
+    metric_name = dataset_config.metric if hasattr(dataset_config, "metric") else dataset_config["metric"]
     metric_value = get_skfp_roc_auc(y_pred, y_test)
     
     return EvaluationResult(

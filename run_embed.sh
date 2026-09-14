@@ -1,10 +1,17 @@
 #!/bin/bash
+# Usage: ./run_embed.sh <huggingface|pytorch> --model <model_name> [extra options]
 
-EXPERIMENT=$1
+if [ $# -lt 2 ]; then
+    echo "Usage: ./run_embed.sh <huggingface|pytorch> --model <model_name> [extra options]"
+    exit 1
+fi
+
+FRAMEWORK=$1
+shift
 DATETIME=$(date '+%Y%m%d_%H%M')
 
 mkdir -p logs_embed
 
-nohup nice -n 10 ./embed_wrapper.sh model_wrappers/${EXPERIMENT} >logs_embed/embed_${EXPERIMENT}_${DATETIME}.log 2>&1 &
+nohup nice -n 10 uv run python embed.py --framework "$FRAMEWORK" "$@" > "logs_embed/embed_${FRAMEWORK}_${DATETIME}.log" 2>&1 &
 
-echo "PID $! started"
+echo "Background embedding started with PID $!"

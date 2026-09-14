@@ -18,7 +18,7 @@ brew install uv
 
 ## Installation
 
-Create the virtual environment and install all dependencies in seconds:
+Create the virtual environment and install all dependencies:
 
 ```sh
 ./install_deps.sh
@@ -40,51 +40,66 @@ uv pip install -r requirements.txt
 Download TDC ADMET and OGB MoleculeNet benchmark datasets:
 
 ```sh
-uv run python download.py
+# Download and prepare all datasets:
+uv run python download.py --dataset all
+
+# Or download specific dataset(s):
+uv run python download.py --dataset DILI CYP2C9_Veith
+
+# List all 26 available datasets:
+uv run python download.py --list
 ```
 
 ### 2. Generate Embeddings
 
-#### HuggingFace Model (Local or Hub)
-To embed datasets with a HuggingFace model (e.g. ChemBERTa, MoLFormer, or your local directory):
+#### HuggingFace Model (Hub or Local Directory)
+To embed datasets with a HuggingFace model (e.g. ChemBERTa, MoLFormer, ChemGPT, or your local directory):
 
 ```sh
-# Using a local model directory or HuggingFace Hub model:
-uv run python embed.py +experiment=huggingface +model=huggingface_chemberta10m_mlm
+# Using a HuggingFace Hub model:
+uv run python embed.py --model DeepChem/ChemBERTa-10M-MLM --dataset DILI
 
-# Or point to a local model checkpoint directory:
-uv run python embed.py +experiment=huggingface model_name=/path/to/my_hf_model
+# Using a local model directory:
+uv run python embed.py --model /path/to/my_hf_model --dataset all
+
+# Specify batch size, pooling (mean/cls/pooler), or device:
+uv run python embed.py --model DeepChem/ChemBERTa-10M-MLM --dataset all --batch-size 64 --pooling mean --device cuda
 ```
 
-#### PyTorch Model (Local Checkpoint)
-To embed datasets using a local PyTorch model checkpoint (`.pt`, TorchScript, or pickled `nn.Module`):
+#### PyTorch Model (Local Checkpoint / TorchScript)
+To embed datasets using a local PyTorch model (`.pt`, `.pth`, TorchScript, or pickled `nn.Module`):
 
 ```sh
-uv run python embed.py +experiment=pytorch model_name=/path/to/my_pytorch_model.pt
+uv run python embed.py --framework pytorch --model /path/to/my_pytorch_model.pt --dataset DILI
 ```
 
 Or run using the wrapper script:
 
 ```sh
-./embed_wrapper.sh model_wrappers/huggingface
+./embed_wrapper.sh model_wrappers/huggingface --model DeepChem/ChemBERTa-10M-MLM --dataset DILI
 # or in the background:
-./run_embed.sh huggingface
+./run_embed.sh huggingface --model DeepChem/ChemBERTa-10M-MLM --dataset all
 ```
 
 ### 3. Evaluate and Score Embeddings
 
-Train and evaluate supervised learning heads (Ridge, Logistic Regression, Random Forest, KNN) across benchmark datasets:
+Train and evaluate supervised learning heads (`rf`, `ridge`, `knn`) across benchmark datasets:
 
 ```sh
-uv run python score.py --multirun +experiment=huggingface
-# or for your custom model:
-uv run python score.py +experiment=huggingface model_name=my_model_name
+# Evaluate on a single dataset:
+uv run python score.py --model ChemBERTa-10M-MLM --dataset DILI
+
+# Evaluate across all datasets with 8 parallel worker jobs:
+uv run python score.py --model ChemBERTa-10M-MLM --dataset all --n-jobs 8
+
+# Select specific heads (e.g. Ridge and Random Forest only):
+uv run python score.py --model ChemBERTa-10M-MLM --dataset all --heads ridge rf
 ```
 
 To run scoring in the background:
 
 ```sh
-./run_scoring.sh huggingface
+./run_scoring.sh --model ChemBERTa-10M-MLM --dataset all --n-jobs 8
 ```
 
 All evaluation metrics and best-performing hyperparameter heads are automatically saved to SQLite at `data/meta.db`.
@@ -100,22 +115,21 @@ See [docs/custom_model.md](docs/custom_model.md) for detailed instructions on co
 ## Repository Structure
 
 ```
-├── config/              # Hydra configurations
-│   ├── dataset/         # TDC & OGB benchmark dataset definitions
-│   ├── experiment/      # Experiment sweeps (huggingface, pytorch)
-│   ├── model/           # Model-specific parameters
-│   ├── embed.yaml       # Embedding pipeline settings
-│   └── score.yaml       # Scoring pipeline settings
 ├── model_wrappers/      # Model integration wrappers
 │   ├── huggingface/     # General HuggingFace & transformer models
 │   └── pytorch/         # General local PyTorch models
 ├── src/
-│   ├── common/          # Dataset types, serialization, database schemas
+│   ├── common/          # Dataset definitions, types, serialization, database schemas
+│   │   ├── datasets.py  # Typed Python dataset registry (26 TDC ADMET & OGB benchmarks)
+│   │   ├── config.py    # Path configuration and EmbeddingConfig dataclass
+│   │   ├── types.py     # SmilesEmbedder, Dataset, EmbeddedDataset abstractions
+│   │   ├── data_v2.py   # Dataset downloading, preprocessing, and SMILES canonicalization
+│   │   └── db.py        # Peewee SQLite database models and context manager
 │   ├── embedding/       # Embedding generation orchestration
 │   └── eval/            # Supervised evaluation heads & metrics
-├── download.py          # Entrypoint to download and prepare datasets
-├── embed.py             # Entrypoint to generate embeddings
-├── score.py             # Entrypoint to train heads and evaluate scores
+├── download.py          # CLI entrypoint to download and prepare datasets
+├── embed.py             # CLI entrypoint to generate embeddings
+├── score.py             # CLI entrypoint to train heads and evaluate scores
 ├── pyproject.toml       # uv / Python project configuration
 └── requirements.txt     # Clean dependency specification
 ```

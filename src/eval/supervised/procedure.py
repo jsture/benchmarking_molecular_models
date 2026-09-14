@@ -1,18 +1,16 @@
 import os
-
 import joblib
 import json
 import torch
 import logging as log
-
-from omegaconf import DictConfig
-from os.path import join
-from hydra.utils import get_original_cwd
+from pathlib import Path
+from typing import Any
 
 from .const import DEFAULT_MEMORY_WEIGHT
 from .train import fit_and_eval_embedding
 from .eval_metrics import evaluate
 from .utils import get_model_version_hash, NpEncoder
+from ...common.config import BASE_DIR
 from ...common.types import EvaluationResult, EmbeddedDataset
 from ...common.db import ClassificationReport
 
@@ -20,16 +18,23 @@ from ...common.db import ClassificationReport
 def eval_embedding(
     data: EmbeddedDataset,
     pred_directory: str,
-    dataset_config,
+    dataset_config: Any,
     metric_name: str,
     model_head: str,
 ) -> EvaluationResult:
     log.info("Training model")
+    mem_wt = getattr(dataset_config, 'memory_weight', None)
+    if mem_wt is None and isinstance(dataset_config, dict):
+        mem_wt = dataset_config.get('memory_weight', DEFAULT_MEMORY_WEIGHT)
+    elif mem_wt is None:
+        mem_wt = DEFAULT_MEMORY_WEIGHT
+
     head_result = fit_and_eval_embedding(
         dataset=data, 
         metric_name=metric_name, 
         model_head=model_head,
-        memory_weight=dataset_config.get('memory_weight', DEFAULT_MEMORY_WEIGHT))
+        memory_weight=mem_wt
+    )
     log.info(f"Training complete, best CV result: {head_result.cv_score}")
     return evaluate(head_result, dataset_config, pred_directory)
 
@@ -66,13 +71,12 @@ def delete_previous_evaluations(
         (ClassificationReport.embedder == model_name) &
         (ClassificationReport.cv_metric_name == metric_name) &
         (ClassificationReport.model == head_name)
-        # (ClassificationReport.library_hash == model_version_hash)
     ).execute()
     log.warning(f"Deleted previous evaluations, dataset: {dataset_name}, model: {model_name}, metric: {metric_name}, head: {head_name}")
 
 
 def eval_procedure(
-    dataset_info: DictConfig,
+    dataset_info: Any,
     embedded_dir: str,
     predictions_dir: str,
     model_name: str,
@@ -80,29 +84,34 @@ def eval_procedure(
     override: bool = False,
 ):
     model_version_hash = get_model_version_hash()
+    dataset_name = dataset_info.name if hasattr(dataset_info, "name") else str(dataset_info)
+    metric = dataset_info.metric if hasattr(dataset_info, "metric") else "roc_auc"
 
-    if check_if_already_evaluated(dataset_info.name, model_name,
-                                  dataset_info.metric,
+    if check_if_already_evaluated(dataset_name, model_name,
+                                  metric,
                                   model_head):
         if not override:
             log.info("Model already evaluated, skipping")
             return
         log.warning("Model already evaluated, overriding")
-        delete_previous_evaluations(dataset_info.name, model_name, dataset_info.metric, model_head)
+        delete_previous_evaluations(dataset_name, model_name, metric, model_head)
         
-    if model_head == 'knn' and 'muv' in dataset_info.name:
+    if model_head == 'knn' and 'muv' in dataset_name:
         log.error("Skipping KNN evaluation for MUV datasets, not supported")
         return
 
-    embedded_filename = join(get_original_cwd(), embedded_dir, dataset_info.name, f"{model_name}.joblib")
-    legacy_filename = join(get_original_cwd(), embedded_dir, dataset_info.name, f"{model_name}.json")
+    emb_path = Path(embedded_dir)
+    if not emb_path.is_absolute():
+        emb_path = BASE_DIR / emb_path
+
+    embedded_filename = str(emb_path / dataset_name / f"{model_name}.joblib")
+    legacy_filename = str(emb_path / dataset_name / f"{model_name}.json")
     
     if os.path.exists(legacy_filename):
         log.info("Legacy embedded dataset found, converting to new format")
         embedded_data = EmbeddedDataset.deserialize_legacy(legacy_filename)
     elif not os.path.exists(embedded_filename):
         log.error(f"Embedded dataset not found: {embedded_filename}")
-        # Cannot raise an error, this will stop hydra execution
         return
     else:
         embedded_data: EmbeddedDataset = joblib.load(embedded_filename)
@@ -125,7 +134,7 @@ def eval_procedure(
         embedded_data,
         predictions_dir,
         dataset_info,
-        dataset_info.metric,
+        metric,
         model_head,
     )
     log.info(f"Evaluation complete, test result: {result.metric_value}")
@@ -137,7 +146,7 @@ def eval_procedure(
         model=result.model,
         hyperparams=dump_hyperparams(result.hyperparams),
         library_hash=model_version_hash,
-        cv_metric_name=dataset_info.metric,
+        cv_metric_name=metric,
         cv_metric=result.cv_metric_value,
         test_metric_name=result.metric_name,
         test_metric=result.metric_value,   

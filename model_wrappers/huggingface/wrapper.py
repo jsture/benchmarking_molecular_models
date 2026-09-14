@@ -102,17 +102,22 @@ class HuggingFaceSmilesEmbedder(SmilesEmbedder):
 
 class MolFormerEmbedder(HuggingFaceSmilesEmbedder):
     def __init__(self, model_path: str = "ibm/MoLFormer-XL-both-10pct", **kwargs):
-        super().__init__(model_path=model_path, pooling='pooler', **kwargs)
+        pooling = kwargs.pop('pooling', 'pooler')
+        super().__init__(model_path=model_path, pooling=pooling, **kwargs)
 
 
 class ChemBERTaEmbedder(HuggingFaceSmilesEmbedder):
     def __init__(self, model_path: str = "DeepChem/ChemBERTa-10M-MTR", **kwargs):
-        super().__init__(model_path=model_path, pooling='cls', **kwargs)
+        pooling = kwargs.pop('pooling', 'cls')
+        super().__init__(model_path=model_path, pooling=pooling, **kwargs)
 
 
 class ChemGPTEmbedder(HuggingFaceSmilesEmbedder):
     def __init__(self, model_path: str = "ncfrey/ChemGPT-4.7M", **kwargs):
-        super().__init__(model_path=model_path, pooling='mean', use_selfies=True, **kwargs)
+        pooling = kwargs.pop('pooling', 'mean')
+        use_selfies = kwargs.pop('use_selfies', True)
+        super().__init__(model_path=model_path, pooling=pooling, use_selfies=use_selfies, **kwargs)
+
 
 
 def get_embedder(name: str, **kwargs) -> SmilesEmbedder:
