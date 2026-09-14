@@ -56,14 +56,15 @@ uv run python download.py --list
 To embed datasets with a HuggingFace model (e.g. ChemBERTa, MoLFormer, ChemGPT, or your local directory):
 
 ```sh
-# Using a HuggingFace Hub model:
+# Using a HuggingFace Hub model (e.g. ChemBERTa, ModernMolBERT):
 uv run python embed.py --model DeepChem/ChemBERTa-10M-MLM --dataset DILI
+uv run python embed.py --model HauserGroup/ModernMolBERT-small --dataset DILI
 
 # Using a local model directory:
 uv run python embed.py --model /path/to/my_hf_model --dataset all
 
 # Specify batch size, pooling (mean/cls/pooler), or device:
-uv run python embed.py --model DeepChem/ChemBERTa-10M-MLM --dataset all --batch-size 64 --pooling mean --device cuda
+uv run python embed.py --model HauserGroup/ModernMolBERT-small --dataset all --batch-size 64 --device auto
 ```
 
 #### PyTorch Model (Local Checkpoint / TorchScript)
@@ -78,7 +79,7 @@ Or run using the wrapper script:
 ```sh
 ./embed_wrapper.sh model_wrappers/huggingface --model DeepChem/ChemBERTa-10M-MLM --dataset DILI
 # or in the background:
-./run_embed.sh huggingface --model DeepChem/ChemBERTa-10M-MLM --dataset all
+./run_embed.sh huggingface --model HauserGroup/ModernMolBERT-small --dataset all
 ```
 
 ### 3. Evaluate and Score Embeddings
@@ -88,21 +89,41 @@ Train and evaluate supervised learning heads (`rf`, `ridge`, `knn`) across bench
 ```sh
 # Evaluate on a single dataset:
 uv run python score.py --model ChemBERTa-10M-MLM --dataset DILI
+uv run python score.py --model ModernMolBERT-small --dataset DILI
 
 # Evaluate across all datasets with 8 parallel worker jobs:
-uv run python score.py --model ChemBERTa-10M-MLM --dataset all --n-jobs 8
+uv run python score.py --model ModernMolBERT-small --dataset all --n-jobs 8
 
 # Select specific heads (e.g. Ridge and Random Forest only):
-uv run python score.py --model ChemBERTa-10M-MLM --dataset all --heads ridge rf
+uv run python score.py --model ModernMolBERT-small --dataset all --heads ridge rf
 ```
 
 To run scoring in the background:
 
 ```sh
-./run_scoring.sh --model ChemBERTa-10M-MLM --dataset all --n-jobs 8
+./run_scoring.sh --model ModernMolBERT-small --dataset all --n-jobs 8
 ```
 
 All evaluation metrics and best-performing hyperparameter heads are automatically saved to human-readable YAML files at `data/results/{dataset}/{model}/{head}.yaml` and aggregated in `data/results.csv` for easy analysis with pandas or spreadsheets.
+
+---
+
+### Example: Benchmarking ModernMolBERT-small End-to-End
+
+```sh
+# 1. Download benchmark dataset (e.g., DILI or all 26 tasks)
+uv run python download.py --dataset DILI
+
+# 2. Extract embeddings with ModernMolBERT
+uv run python embed.py --model HauserGroup/ModernMolBERT-small --dataset DILI
+
+# 3. Train and evaluate supervised heads (Ridge, Random Forest, KNN)
+uv run python score.py --model ModernMolBERT-small --dataset DILI
+
+# 4. View results summary in terminal or inspect files
+cat data/results.csv
+head data/results/DILI/ModernMolBERT-small/ridge.yaml
+```
 
 ---
 
