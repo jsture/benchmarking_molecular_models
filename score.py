@@ -16,7 +16,7 @@ from joblib import Parallel, delayed
 
 from src.common.config import BASE_DIR, EmbeddingConfig
 from src.common.datasets import resolve_datasets, list_dataset_names
-from src.common.db import DbContex, init_db
+from src.common.results import sync_csv_from_yaml, load_results
 from src.eval import eval_procedure, AVAILABLE_HEADS
 
 logging_format = "%(asctime)s - %(levelname)s - %(message)s"
@@ -51,15 +51,15 @@ def evaluate_task(
 ):
     log.info(f"Evaluating {model_name} on {dataset_cfg.name} (task: {dataset_cfg.task}, metric: {dataset_cfg.metric}) with head: {head}")
     try:
-        with DbContex(embed_config):
-            eval_procedure(
-                dataset_info=dataset_cfg,
-                embedded_dir=embed_config.embedded_directory,
-                predictions_dir=embed_config.predictions_directory,
-                model_name=model_name,
-                model_head=head,
-                override=override,
-            )
+        eval_procedure(
+            dataset_info=dataset_cfg,
+            embedded_dir=embed_config.embedded_directory,
+            predictions_dir=embed_config.predictions_directory,
+            model_name=model_name,
+            model_head=head,
+            override=override,
+            results_dir=embed_config.results_directory,
+        )
     except Exception as e:
         if safe:
             log.error(f"Error evaluating {model_name} on {dataset_cfg.name} with head {head}: {e}")
@@ -103,7 +103,7 @@ def parse_args():
         "--override", "--no-cache",
         action="store_true",
         dest="override",
-        help="Re-evaluate and overwrite existing results in database.",
+        help="Re-evaluate and overwrite existing results.",
     )
     parser.add_argument(
         "--safe",
@@ -130,10 +130,16 @@ def parse_args():
         help="Directory to save test predictions (default: 'data/predictions').",
     )
     parser.add_argument(
-        "--database",
+        "--results-dir",
         type=str,
-        default="data/meta.db",
-        help="Path to SQLite database (default: 'data/meta.db').",
+        default="data/results",
+        help="Directory to save per-evaluation YAML result files (default: 'data/results').",
+    )
+    parser.add_argument(
+        "--results-file",
+        type=str,
+        default="data/results.csv",
+        help="Path to aggregated benchmark results CSV file (default: 'data/results.csv').",
     )
     parser.add_argument(
         "--list-datasets",
@@ -166,9 +172,9 @@ def main():
     embed_config = EmbeddingConfig(
         embedded_directory=args.embedded_dir,
         predictions_directory=args.predictions_dir,
-        database=args.database,
+        results_directory=args.results_dir,
+        results_file=args.results_file,
     )
-    init_db(embed_config)
 
     resolved_model = resolve_model_name(
         args.model,
@@ -195,7 +201,19 @@ def main():
             for cfg, head in tasks
         )
 
-    log.info(f"Scoring complete. Results saved to {args.database}")
+    # Synchronize all YAML results into the master CSV file
+    df = sync_csv_from_yaml(args.results_dir, args.results_file)
+
+    if not df.empty:
+        current_model_df = df[df["embedder"] == resolved_model]
+        if not current_model_df.empty:
+            cols = ["dataset", "head", "cv_metric_name", "cv_metric", "test_metric_name", "test_metric"]
+            available_cols = [c for c in cols if c in current_model_df.columns]
+            print("\n=== Benchmark Evaluation Summary ===")
+            print(current_model_df[available_cols].to_string(index=False))
+            print("=====================================\n")
+
+    log.info(f"Scoring complete. Results saved to {args.results_dir} and {args.results_file}")
 
 
 if __name__ == "__main__":

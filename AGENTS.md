@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-The benchmark follows download → embed → score, with root entry points `download.py`, `embed.py`, and `score.py` powered by standard Python `argparse` CLIs. Shared dataset types, typed dataset registries, serialization, and database utilities live in `src/common/`; embedding orchestration lives in `src/embedding/`; supervised evaluation lives in `src/eval/`.
+The benchmark follows download → embed → score, with root entry points `download.py`, `embed.py`, and `score.py` powered by standard Python `argparse` CLIs. Shared dataset types, typed dataset registries, serialization, and file-based result storage live in `src/common/`; embedding orchestration lives in `src/embedding/`; supervised evaluation lives in `src/eval/`.
 
 Benchmark dataset configurations live in `src/common/datasets.py` (covering 26 TDC ADMET and OGB MoleculeNet tasks). Model implementations live in `model_wrappers/` (`huggingface` and `pytorch`). `docs/custom_model.md` explains custom model extensions.
 
@@ -27,7 +27,7 @@ New wrappers implement `SmilesEmbedder`, expose `get_embedder()`, and return an 
 
 ## Testing Guidelines
 
-Validate changes with a small configured dataset through download, embedding, and scoring (e.g. `DILI` or `ogbg-molhiv`). Check embedding dimensions, sample alignment, failed-sample handling, and results stored in `data/meta.db`.
+Validate changes with a small configured dataset through download, embedding, and scoring (e.g. `DILI` or `ogbg-molhiv`). Check embedding dimensions, sample alignment, failed-sample handling, and results stored in `data/results/` and `data/results.csv`.
 
 ## Commit & Pull Request Guidelines
 

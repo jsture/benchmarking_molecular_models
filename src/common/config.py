@@ -13,7 +13,8 @@ class EmbeddingConfig:
     embedded_directory: str = "data/embedded"
     prepared_directory: str = "data/prepared"
     predictions_directory: str = "data/predictions"
-    database: str = "data/meta.db"
+    results_directory: str = "data/results"
+    results_file: str = "data/results.csv"
     illegal_smiles: str = "src/common/illegal_smiles.txt"
     max_invalid_embeddings: int = 50
     data_directory: str = "data/downloaded"

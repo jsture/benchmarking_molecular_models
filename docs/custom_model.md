@@ -96,4 +96,4 @@ def get_embedder(name: str, **kwargs):
    # Or using the background runner:
    ./run_scoring.sh --model ChemBERTa-10M-MLM --dataset all --n-jobs 8
    ```
-4. Results are stored in the SQLite database at `data/meta.db`.
+4. Results are stored in `data/results/{dataset}/{model}/{head}.yaml` and aggregated in `data/results.csv`.

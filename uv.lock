@@ -249,8 +249,8 @@ dependencies = [
     { name = "numpy" },
     { name = "ogb" },
     { name = "pandas" },
-    { name = "peewee" },
     { name = "pytdc" },
+    { name = "pyyaml" },
     { name = "rdkit" },
     { name = "safetensors" },
     { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -268,8 +268,8 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.24.0,<2.0.0" },
     { name = "ogb", specifier = ">=1.3.6" },
     { name = "pandas", specifier = ">=1.5.0" },
-    { name = "peewee", specifier = ">=3.17.0" },
     { name = "pytdc", specifier = ">=0.4.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "rdkit", specifier = ">=2023.3.1" },
     { name = "safetensors", specifier = ">=0.4.0" },
     { name = "scikit-learn", specifier = ">=1.3.0" },
@@ -1757,15 +1757,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/08/e3/950e513affdfe1c1864397b4f40d6ed06ec1b54f608e462c27f151dd72df/patsy-1.0.3.tar.gz", hash = "sha256:79ebf4c93ff4d296e58a9d5be2b2ee31bd49d737cf11d70ffbd8a44b2de42e65", size = 399992, upload-time = "2026-08-29T21:35:32.258Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/20/70/cd3cf5cff538323076a879edef02cce6f13f7d75e03d12f211b0a0dbd178/patsy-1.0.3-py2.py3-none-any.whl", hash = "sha256:d3dbebe8fd5f46e29912d030b63c6268647b59bf788a99e2af28a30234cf357c", size = 233318, upload-time = "2026-08-29T21:35:30.913Z" },
-]
-
-[[package]]
-name = "peewee"
-version = "4.5.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ed/9b/74f549937d7edfb75742f426347a7483b0aab70909e2250e44f067027094/peewee-4.5.1.tar.gz", hash = "sha256:8005cb45c54e1a282a2f24ddd583f0f7a80cd5d9c635d50d63f57c11d88c392a", size = 823179, upload-time = "2026-09-08T01:20:10.449Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/13/90/3ddf6ef69090c63b6fe0d42b41e5dd3323d95dfe01eda6766305337be862/peewee-4.5.1-py3-none-any.whl", hash = "sha256:dbbdc93e9be08d1df49ceed48dc5d609bfeda6112848086f1f6c1f1debe70975", size = 193883, upload-time = "2026-09-08T01:20:09.027Z" },
 ]
 
 [[package]]

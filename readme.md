@@ -102,7 +102,7 @@ To run scoring in the background:
 ./run_scoring.sh --model ChemBERTa-10M-MLM --dataset all --n-jobs 8
 ```
 
-All evaluation metrics and best-performing hyperparameter heads are automatically saved to SQLite at `data/meta.db`.
+All evaluation metrics and best-performing hyperparameter heads are automatically saved to human-readable YAML files at `data/results/{dataset}/{model}/{head}.yaml` and aggregated in `data/results.csv` for easy analysis with pandas or spreadsheets.
 
 ---
 
@@ -119,12 +119,12 @@ See [docs/custom_model.md](docs/custom_model.md) for detailed instructions on co
 │   ├── huggingface/     # General HuggingFace & transformer models
 │   └── pytorch/         # General local PyTorch models
 ├── src/
-│   ├── common/          # Dataset definitions, types, serialization, database schemas
+│   ├── common/          # Dataset definitions, types, serialization, and storage
 │   │   ├── datasets.py  # Typed Python dataset registry (26 TDC ADMET & OGB benchmarks)
 │   │   ├── config.py    # Path configuration and EmbeddingConfig dataclass
 │   │   ├── types.py     # SmilesEmbedder, Dataset, EmbeddedDataset abstractions
 │   │   ├── data_v2.py   # Dataset downloading, preprocessing, and SMILES canonicalization
-│   │   └── db.py        # Peewee SQLite database models and context manager
+│   │   └── results.py   # YAML & CSV benchmark result storage and synchronization
 │   ├── embedding/       # Embedding generation orchestration
 │   └── eval/            # Supervised evaluation heads & metrics
 ├── download.py          # CLI entrypoint to download and prepare datasets
