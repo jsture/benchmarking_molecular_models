@@ -1,98 +1,156 @@
-# Benchmarking Pretrained Molecular Embedding Models For Molecular Representation Learning
+# Molecular Model Benchmarking
 
-[![arXiv](https://img.shields.io/badge/arXiv-2508.06199-b31b1b.svg)](https://arxiv.org/abs/2508.06199)
+A streamlined framework for evaluating and benchmarking local **PyTorch** and **HuggingFace** pretrained molecular models on TDC ADMET and MoleculeNet (OGB) benchmarks.
 
 ---
 
-This is the repository containing the code for the paper "Benchmarking Pretrained Molecular Embedding Models For Molecular Representation Learning" by Mateusz Praski, Jakub Adamczyk, Wojciech Czech. [link](https://arxiv.org/abs/2508.06199)
+## Prerequisites
 
-## Requirements
+- **Python**: `>=3.10, <3.12`
+- **uv**: Fast Python package installer and dependency manager ([uv installation guide](https://docs.astral.sh/uv/))
 
-- Python >= 3.10, < 3.12
-- Pyenv for managing embedding model venvs
+```sh
+# On macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# Or via Homebrew on macOS
+brew install uv
+```
 
 ## Installation
 
-After you create a fresh venv (Python >=3.10,<3.12), run the following command to install the dependencies:
+Create the virtual environment and install all dependencies:
 
 ```sh
 ./install_deps.sh
 ```
 
-## Usage
-Start with downloading all of the required datasets. By default, all TDC ADMET + MoleculeNet benchmarks can be downloaded using the command:
+Or manually:
+
 ```sh
-python download.py
+uv venv --python 3.11 .venv
+source .venv/bin/activate
+uv pip install -r requirements.txt
 ```
 
-To run the embedding procedure for an existing model, for all datasets, run the command:
+---
+
+## Quickstart
+
+### 1. Download Benchmark Datasets
+Download TDC ADMET and OGB MoleculeNet benchmark datasets:
+
 ```sh
-./embed_wrapper.sh /path/to/implementation # e.g. ./embed_wrapper.sh model_wrappers/huggingface
+# Download and prepare all datasets:
+uv run python download.py --dataset all
+
+# Or download specific dataset(s):
+uv run python download.py --dataset DILI CYP2C9_Veith
+
+# List all 26 available datasets:
+uv run python download.py --list
 ```
 
-If you want to run this in the background, you can use the shorthand command:
+### 2. Generate Embeddings
+
+#### HuggingFace Model (Hub or Local Directory)
+To embed datasets with a HuggingFace model (e.g. ChemBERTa, MoLFormer, ChemGPT, or your local directory):
+
 ```sh
-./run_embed.sh <implementation name> # e.g. ./run_embed.sh huggingface
+# Using a HuggingFace Hub model (e.g. ChemBERTa, ModernMolBERT):
+uv run python embed.py --model DeepChem/ChemBERTa-10M-MLM --dataset DILI
+uv run python embed.py --model HauserGroup/ModernMolBERT-small --dataset DILI
+
+# Using a local model directory:
+uv run python embed.py --model /path/to/my_hf_model --dataset all
+
+# Specify batch size, pooling (mean/cls/pooler), or device:
+uv run python embed.py --model HauserGroup/ModernMolBERT-small --dataset all --batch-size 64 --device auto
 ```
 
-This will perform the embedding procedure on all defined datasets (see `config/embed.yaml` for the default list).
+#### PyTorch Model (Local Checkpoint / TorchScript)
+To embed datasets using a local PyTorch model (`.pt`, `.pth`, TorchScript, or pickled `nn.Module`):
 
-To train and evaluate supervised learning heads using the embeddings, run the following command:
 ```sh
-python score.py --multirun +experiment=<implementation name> # e.g +experiment=huggingface
+uv run python embed.py --framework pytorch --model /path/to/my_pytorch_model.pt --dataset DILI
 ```
 
-If you want to run this in the background, you can use the shorthand command:
+Or run using the wrapper script:
+
 ```sh
-./run_scoring.sh <implementation name> # e.g. ./run_scoring.sh huggingface
+./embed_wrapper.sh model_wrappers/huggingface --model DeepChem/ChemBERTa-10M-MLM --dataset DILI
+# or in the background:
+./run_embed.sh huggingface --model HauserGroup/ModernMolBERT-small --dataset all
 ```
 
-List of available implementations is defined under `config/experiment`.
-List of available datasets is defined under `config/dataset`.
+### 3. Evaluate and Score Embeddings
 
-Dataset named `ogbg-molXXX` refers to the `XXX` dataset from the [MoleculeNet](https://moleculenet.org/). The splits are taken from the [Open Graph Benchmark (OGB)](https://ogb.stanford.edu/).
+Train and evaluate supervised learning heads (`rf`, `ridge`, `knn`) across benchmark datasets:
 
-Embeddings will be saved as a [EmbeddedDataset](src/common/types.py) object under `data/embedded/<dataset>/model.<joblib/json>`, depending on the implementation. Due to the Pandas serialization format incompatibility in different environments, we implement a simple custom serialization of outputs from some older models.
+```sh
+# Evaluate on a single dataset:
+uv run python score.py --model ChemBERTa-10M-MLM --dataset DILI
+uv run python score.py --model ModernMolBERT-small --dataset DILI
 
-SQLite database with the best-performing classifier heads (based on the grid search tuning) will be saved to `data/meta.db`.
+# Evaluate across all datasets with 8 parallel worker jobs:
+uv run python score.py --model ModernMolBERT-small --dataset all --n-jobs 8
 
-In our benchmark study, some of the models required filtering of a small number of SMILES, e.g.: due to the SELFIES translation issues, or lack of support for dative bonds. Those SMILES are defined in [illegal_smiles.txt](config/illegal_smiles.txt) in the config directory. To reproduce those illegal SMILES as in the original articles, please refer to the `selfies_debugger.ipynb` notebook.
-
-To generate illustrations referred in the article, please refer to the `visualizations.ipynb`.
-
-To generate BBT models, please follow the [BBTcomp installation setup](https://github.com/jwainer/bbtcomp) with PyStan installation. After that step, generate the `classificationreport.csv` using `visualizations.ipynb`, and run the `bbt.ipynb` to generate the BBT model statistics.
-
-## Testing your own model
-
-To test your own model, please implement a wrapper following the [instructions here](docs/custom_model.md). You can also refer to the existing implementations under `model_wrappers` directory.
-
-If you want to only test your own model, we recommend using the `lightweight` branch, which only contains the benchmarking procedure source code, without any models. You can use our results as a reference point, just copy-and-paste `results/arxiv_preprint_2025_08.db` file to `data/meta.db` to append your results to the existing ones.
-
-### Sharing your model
-
-If you want your model to be included in our latest benchmark, feel free to open a PR with your implementation. We will be happy to review it and include it in the results.
-
-## Tips on controlling number of threads
-
-This project relies on hydra multirun functionality to run experiments in parallel. By default, the embedding procedure does not perform multirun, however if you want to run multiple datasets at once, you can specify parameter `hydra.launcher.n_jobs` in the experiment config (`config/experiment/model_name.yaml`, see [fingerprints](config/experiment/fingerprints.yaml) for an example). When using multirun mode, you also need to override hydra launcher from default to `joblib` (as in fingerprints example). See more about hydra multirun [here](https://hydra.cc/docs/tutorials/basic/running_your_app/multi-run/) and [here](https://hydra.cc/docs/plugins/joblib_launcher/).
-
-Scoring procedure can also be run in multirun mode, in a similar manner. The default configuration provides 8 datasets in parallel. Additionally, the scikit-learn classifiers will also utilize multithreading, by default using `n_jobs=32`. This is defined in [src/eval/supervised/const.py](src/eval/supervised/const.py).
-
-Some datasets are very large, and for those cases the memory_weight parameter can be used to control the memory usage. This was included due to the OOM issues for larger datasets with high parallelization. If `memory_weight` value is set, the number of `n_jobs` will be divided by `memory_weight` (rounded down). For `n_jobs=8` and `memory_weight=2`, the actual number of jobs will be 4. See [molmuv](config/dataset/clf_ogbg-molmuv.yaml) for an example of `memory_weight` usage.
-
-## Cite 
-
-If you find this work useful in your research, please cite:
-
-```
-@article{praski2025benchmarking,
-  title={Benchmarking Pretrained Molecular Embedding Models For Molecular Representation Learning},
-  author={Praski, Mateusz and Adamczyk, Jakub and Czech, Wojciech},
-  journal={arXiv preprint arXiv:2508.06199},
-  year={2025}
-}
+# Select specific heads (e.g. Ridge and Random Forest only):
+uv run python score.py --model ModernMolBERT-small --dataset all --heads ridge rf
 ```
 
-## License
+To run scoring in the background:
 
-Feel free to use any parts of this project in your research. If you do so, please cite our paper as shown above. Due to the vast number of models used in this project, we're unable to provide a unified license for the entire repository. Please refer to the individual model implementations for their respective licenses.
+```sh
+./run_scoring.sh --model ModernMolBERT-small --dataset all --n-jobs 8
+```
+
+All evaluation metrics and best-performing hyperparameter heads are automatically saved to human-readable YAML files at `data/results/{dataset}/{model}/{head}.yaml` and aggregated in `data/results.csv` for easy analysis with pandas or spreadsheets.
+
+---
+
+### Example: Benchmarking ModernMolBERT-small End-to-End
+
+```sh
+# 1. Download benchmark dataset (e.g., DILI or all 26 tasks)
+uv run python download.py --dataset DILI
+
+# 2. Extract embeddings with ModernMolBERT
+uv run python embed.py --model HauserGroup/ModernMolBERT-small --dataset DILI
+
+# 3. Train and evaluate supervised heads (Ridge, Random Forest, KNN)
+uv run python score.py --model ModernMolBERT-small --dataset DILI
+
+# 4. View results summary in terminal or inspect files
+cat data/results.csv
+head data/results/DILI/ModernMolBERT-small/ridge.yaml
+```
+
+---
+
+## Adding Your Own Model
+
+See [docs/custom_model.md](docs/custom_model.md) for detailed instructions on configuring and benchmarking custom PyTorch architectures or HuggingFace transformers.
+
+---
+
+## Repository Structure
+
+```
+├── model_wrappers/      # Model integration wrappers
+│   ├── huggingface/     # General HuggingFace & transformer models
+│   └── pytorch/         # General local PyTorch models
+├── src/
+│   ├── common/          # Dataset definitions, types, serialization, and storage
+│   │   ├── datasets.py  # Typed Python dataset registry (26 TDC ADMET & OGB benchmarks)
+│   │   ├── config.py    # Path configuration and EmbeddingConfig dataclass
+│   │   ├── types.py     # SmilesEmbedder, Dataset, EmbeddedDataset abstractions
+│   │   ├── data_v2.py   # Dataset downloading, preprocessing, and SMILES canonicalization
+│   │   └── results.py   # YAML & CSV benchmark result storage and synchronization
+│   ├── embedding/       # Embedding generation orchestration
+│   └── eval/            # Supervised evaluation heads & metrics
+├── download.py          # CLI entrypoint to download and prepare datasets
+├── embed.py             # CLI entrypoint to generate embeddings
+├── score.py             # CLI entrypoint to train heads and evaluate scores
+├── pyproject.toml       # uv / Python project configuration
+└── requirements.txt     # Clean dependency specification
+```

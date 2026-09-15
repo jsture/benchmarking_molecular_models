@@ -1,163 +1,132 @@
-import selfies as sf
+import os
 import torch
 import logging as log
-import traceback
-
-from rdkit import Chem
-from os.path import join
-from hydra.utils import get_original_cwd
-from tqdm.auto import tqdm
+from typing import Optional, Literal
+from transformers import AutoModel, AutoTokenizer
 from src.common.utils import get_device, batch
 from src.common.types import SmilesEmbedder
-from abc import ABC
-from typing import Optional
-from transformers import AutoModel, AutoTokenizer, RobertaConfig, RobertaTokenizer, RobertaModel
-from joblib import Parallel, delayed
-import multiprocessing
-from sentence_transformers import SentenceTransformer
-from transformers.modeling_utils import SequenceSummary
 
 
-
-def smiles_to_selfies(smiles):
-    default_constaints = sf.get_semantic_constraints()
-    default_constaints['P-1'] = 6 # molhiv
-    default_constaints['Fe'] = 10 # molhiv
-    default_constaints['Fe+3'] = 10 # molhiv
-    default_constaints['Fe+2'] = 9 # molhiv
-    sf.set_semantic_constraints(default_constaints)
+def smiles_to_selfies(smiles: str) -> Optional[str]:
     try:
-        return sf.encoder(Chem.CanonSmiles(smiles))
-    except Exception as e:
+        import selfies as sf
+        from rdkit import Chem
+        default_constraints = sf.get_semantic_constraints()
+        default_constraints['P-1'] = 6
+        default_constraints['Fe'] = 10
+        default_constraints['Fe+3'] = 10
+        default_constraints['Fe+2'] = 9
+        sf.set_semantic_constraints(default_constraints)
         try:
-            log.error(f"Error encoding SMILES {smiles}: {e}")
+            return sf.encoder(Chem.CanonSmiles(smiles))
+        except Exception:
             return sf.encoder(smiles)
-        except Exception as e2:
-            log.error(f"Error encoding SMILES {smiles} with fallback: {e2}")
-            log.error(traceback.format_exc())
-            return None
+    except Exception as e:
+        log.warning(f"Error converting SMILES to SELFIES for '{smiles}': {e}")
+        return None
 
 
-
-class HuggingFaceSmilesEmbedder(SmilesEmbedder, ABC):
-    MODEL_PATH = None
-    BATCH_MODE = True
-    
-    def __init__(self, batch_size: int = 128, model_path: Optional[str] = None, device: Optional[str] = None, init_models: bool = True):
-        if model_path is None:
-            model_path = self.MODEL_PATH
-        self._device = get_device(device)
-        self._model_name = model_path.split("/")[-1]
-        if init_models:
-            self._model = AutoModel.from_pretrained(model_path, trust_remote_code=True).to(self._device)
-            self._tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-        else:
-            self._model = None
-            self._tokenizer = None
+class HuggingFaceSmilesEmbedder(SmilesEmbedder):
+    """
+    General embedder for any local or HuggingFace Hub molecular model.
+    Accepts either a local path (e.g. './checkpoints/my_model') or a HuggingFace Hub identifier.
+    """
+    def __init__(
+        self,
+        model_path: str,
+        pooling: Literal['mean', 'cls', 'pooler'] = 'mean',
+        batch_size: int = 128,
+        max_length: int = 512,
+        device: Optional[str] = None,
+        use_selfies: bool = False,
+        **_kwargs
+    ):
+        self._model_path = model_path
+        self._model_name = os.path.basename(os.path.normpath(model_path))
+        self._pooling = pooling
         self._batch_size = batch_size
-    
-    def _model_batch(self, batch):
-        raise NotImplementedError()
-    
-    def _model_step(self, s):
-        raise NotImplementedError()
-        
+        self._max_length = max_length
+        self._device = get_device(device)
+        self._use_selfies = use_selfies
+
+        log.info(f"Loading HuggingFace model from: {model_path} on {self._device} (pooling={pooling})")
+        self._tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        self._model = AutoModel.from_pretrained(model_path, trust_remote_code=True).to(self._device)
+        self._model.eval()
+
+    def _pool_outputs(self, outputs, attention_mask):
+        if self._pooling == 'cls':
+            return outputs.last_hidden_state[:, 0, :]
+        elif self._pooling == 'pooler' and hasattr(outputs, 'pooler_output') and outputs.pooler_output is not None:
+            return outputs.pooler_output
+        else:  # 'mean' pooling
+            token_embeddings = outputs.last_hidden_state
+            input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+            sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
+            sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+            return sum_embeddings / sum_mask
+
+    def _embed_batch(self, batch_smiles):
+        if self._use_selfies:
+            batch_inputs = [smiles_to_selfies(s) or "" for s in batch_smiles]
+        else:
+            batch_inputs = list(batch_smiles)
+
+        encoded = self._tokenizer(
+            batch_inputs,
+            padding=True,
+            truncation=True,
+            max_length=self._max_length,
+            return_tensors="pt"
+        ).to(self._device)
+
+        outputs = self._model(**encoded)
+        return self._pool_outputs(outputs, encoded['attention_mask'])
+
     def forward(self, smiles):
+        outputs = []
         with torch.no_grad():
-            if self.BATCH_MODE:
-                outputs = [
-                    self._model_batch(s).to('cpu')
-                    for s in batch(smiles, n=self._batch_size)
-                ]
-            else:
-                outputs = [
-                    self._model_step(s).to('cpu')
-                    for s in tqdm(smiles)
-                ]
-        return torch.cat(outputs).numpy()
-    
+            for b in batch(smiles, n=self._batch_size):
+                out = self._embed_batch(b).to('cpu')
+                outputs.append(out)
+        return torch.cat(outputs, dim=0).numpy()
+
     @property
     def name(self):
         return self._model_name
-    
+
     @property
     def device_used(self):
         return self._device.type.split(':')[0]
-    
+
 
 class MolFormerEmbedder(HuggingFaceSmilesEmbedder):
-    MODEL_PATH = "ibm/MoLFormer-XL-both-10pct"
-
-    def _model_batch(self, batch):
-        return self._model(**self._tokenizer(batch, return_tensors="pt", padding=True).to(self._device)).pooler_output
+    def __init__(self, model_path: str = "ibm/MoLFormer-XL-both-10pct", **kwargs):
+        pooling = kwargs.pop('pooling', 'pooler')
+        super().__init__(model_path=model_path, pooling=pooling, **kwargs)
 
 
 class ChemBERTaEmbedder(HuggingFaceSmilesEmbedder):
-    MODEL_PATH = "DeepChem/ChemBERTa-10M-MTR"
-    
-    def _model_batch(self, batch):
-        return self._model(**self._tokenizer(batch, return_tensors="pt", padding="max_length", max_length=512, truncation=True).to(self._device)).last_hidden_state[:, 0, :]
+    def __init__(self, model_path: str = "DeepChem/ChemBERTa-10M-MTR", **kwargs):
+        pooling = kwargs.pop('pooling', 'cls')
+        super().__init__(model_path=model_path, pooling=pooling, **kwargs)
 
 
 class ChemGPTEmbedder(HuggingFaceSmilesEmbedder):
-    MODEL_PATH = "ncfrey/ChemGPT-4.7M"
-    BATCH_MODE = False
-    
-    def _model_step(self, s):
-        s = smiles_to_selfies(s)
-        return self._model(**self._tokenizer(s, return_tensors="pt").to(self._device)).last_hidden_state.mean(dim=1)
+    def __init__(self, model_path: str = "ncfrey/ChemGPT-4.7M", **kwargs):
+        pooling = kwargs.pop('pooling', 'mean')
+        use_selfies = kwargs.pop('use_selfies', True)
+        super().__init__(model_path=model_path, pooling=pooling, use_selfies=use_selfies, **kwargs)
 
 
-class SELFormerEmbedder(HuggingFaceSmilesEmbedder):
-    BATCH_MODE = False
-    
-    def __init__(self, batch_size: int = 128, model_path: Optional[str] = None, device: Optional[str] = None):
-        super().__init__(batch_size, model_path, device, init_models=False)
-        model_path = join(get_original_cwd(), "model_wrappers/huggingface/model_weights", model_path)
-        config = RobertaConfig.from_pretrained(model_path)
-        config.output_hidden_states = True
-        self._tokenizer = RobertaTokenizer.from_pretrained(join(get_original_cwd(), "model_wrappers/huggingface/selformer_repo/data/RobertaFastTokenizer"))
-        self._model = RobertaModel.from_pretrained(model_path, config=config).to(self._device)
-        self._joblib_backend = Parallel(n_jobs=multiprocessing.cpu_count())
-        
-    def forward(self, smiles):
-        smiles = list(self._joblib_backend(delayed(smiles_to_selfies)(s) for s in smiles))
-        return super().forward(smiles)
 
-    def _model_step(self, selfie):
-        token = torch.tensor([self._tokenizer.encode(selfie, add_special_tokens=True, max_length=512, padding=True, truncation=True)]).to(self._device)
-        output = self._model(token)
-
-        sequence_out = output[0]
-        return torch.mean(sequence_out[0], dim=0)
-    
-
-class ChemFMEmbedder(HuggingFaceSmilesEmbedder):
-    BATCH_MODE = False
-    EOS_TOKEN = "<eos>"
-    def __init__(self, model_path: str):
-        if '_' in model_path:
-            model_path = model_path.split('_')[0]
-        
-        super().__init__(model_path=model_path, init_models=True)
-        self._model = torch.nn.DataParallel(self._model).to(self._device)
-
-    def _model_step(self, s):
-        s = s + self.EOS_TOKEN
-        inputs = self._tokenizer(s, return_tensors="pt", return_token_type_ids=False).to(self._device)
-        outputs = self._model(**inputs)
-        return outputs.last_hidden_state[0, -1, :] # EOS token embedding
-
-
-def get_embedder(name, **_kwargs) -> SmilesEmbedder:
-    if 'selformer' in name.lower():
-        return SELFormerEmbedder(model_path=name)
-    elif 'molformer' in name.lower():
-        return MolFormerEmbedder(model_path=name)
-    elif 'chemberta' in name.lower():
-        return ChemBERTaEmbedder(model_path=name)
-    elif 'chemgpt' in name.lower():
-        return ChemGPTEmbedder(model_path=name)
-    elif 'chemfm' in name.lower():
-        return ChemFMEmbedder(model_path=name)
-    raise ValueError(f'Unknown model name: {name}')
+def get_embedder(name: str, **kwargs) -> SmilesEmbedder:
+    name_lower = name.lower()
+    if 'molformer' in name_lower:
+        return MolFormerEmbedder(model_path=name, **kwargs)
+    elif 'chemberta' in name_lower:
+        return ChemBERTaEmbedder(model_path=name, **kwargs)
+    elif 'chemgpt' in name_lower:
+        return ChemGPTEmbedder(model_path=name, **kwargs)
+    else:
+        return HuggingFaceSmilesEmbedder(model_path=name, **kwargs)

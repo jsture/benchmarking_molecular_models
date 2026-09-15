@@ -6,7 +6,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import  Ridge, LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
-from skfp.distances import tanimoto_count_distance
+
 
 
 RF_CLF = {
@@ -56,24 +56,31 @@ AVAILABLE_HEADS = ["rf", "ridge", "knn"]
 
 def get_knn_distance(embeddings_dtype):
     if np.issubdtype(embeddings_dtype, np.integer):
-        return tanimoto_count_distance
+        try:
+            from skfp.distances import tanimoto_count_distance
+            return tanimoto_count_distance
+        except ImportError:
+            raise ImportError("scikit-fingerprints (skfp) is required for integer embeddings, but not installed.")
     elif np.issubdtype(embeddings_dtype, np.floating):
         return "cosine"
     else:
         raise ValueError(f"Unsupported embeddings dtype: {embeddings_dtype}. Expected integer or floating point type.")
 
 
-def get_clf_models(no_output: int, embeddings_dtype):
+from .const import DEFAULT_SEED
+
+
+def get_clf_models(no_output: int, embeddings_dtype, random_state: int | None = DEFAULT_SEED):
     if no_output == 1:
-        lr_clf = LogisticRegression(n_jobs=-1)
+        lr_clf = LogisticRegression(n_jobs=-1, random_state=random_state)
         lr_params = RIDGE_CLF
     else:
-        lr_clf = MultiOutputClassifier(LogisticRegression(n_jobs=-1))
+        lr_clf = MultiOutputClassifier(LogisticRegression(n_jobs=-1, random_state=random_state))
         lr_params = RIDGE__MULTIOUTPUT_CLF
     
     return {
         "rf": {
-            "model": Pipeline([("clf", RandomForestClassifier(n_jobs=-1))]),
+            "model": Pipeline([("clf", RandomForestClassifier(n_jobs=-1, random_state=random_state))]),
             "params": RF_CLF.copy(),
         },
         "ridge": {
@@ -97,17 +104,17 @@ def get_clf_models(no_output: int, embeddings_dtype):
     }
 
 
-def get_reg_models(embeddings_dtype):
+def get_reg_models(embeddings_dtype, random_state: int | None = DEFAULT_SEED):
     return {
         "rf": {
-            "model": Pipeline([("clf", RandomForestRegressor(n_jobs=-1))]),
+            "model": Pipeline([("clf", RandomForestRegressor(n_jobs=-1, random_state=random_state))]),
             "params": RF_REG.copy(),
         },
         "ridge": {
             "model": Pipeline(
                 [
                     ("scaler", StandardScaler()),
-                    ("clf", Ridge()),
+                    ("clf", Ridge(random_state=random_state)),
                 ]
             ),
             "params": RIDGE_REG.copy(),

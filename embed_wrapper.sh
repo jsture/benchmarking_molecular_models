@@ -1,86 +1,32 @@
 #!/bin/bash
+set -e
 
-# parse
-DELETE=false
-CACHE=true
-CMD=embed.py
-REINSTALL=""
+# Usage: ./embed_wrapper.sh model_wrappers/<huggingface|pytorch> --model <model_name> [extra options]
+
 WRAPPER_PATH=""
+EXTRA_ARGS=()
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         -d|--delete)
-            DELETE=true
-            shift
-            ;;
-        -r|--reinstall)
-            REINSTALL=true
-            shift
-            ;;
-        --no-cache)
-            CACHE=false
-            shift
-            ;;
-        --clock)
-            CMD=clock.py
-            shift
-            ;;
-        --embed)
-            CMD=embed.py
-            shift
+            rm -rf .venv
+            echo "Cleaned up .venv"
+            exit 0
             ;;
         *)
-            WRAPPER_PATH=$1
+            if [ -z "$WRAPPER_PATH" ] && [[ "$1" == model_wrappers/* || "$1" == "huggingface" || "$1" == "pytorch" ]]; then
+                WRAPPER_PATH=$1
+            else
+                EXTRA_ARGS+=("$1")
+            fi
             shift
-            ;;
-        -*|--*)
-            echo "Unknown option: $1"
-            exit 1
             ;;
     esac
 done
 
-run() {
-    cd $WRAPPER_PATH
-
-    # install environment
-    if [ -d "venv" ] && [ -z "$REINSTALL" ]; then
-        source venv/bin/activate
-        export INSTALL_DEP=false
-    else
-        export INSTALL_DEP=true
-        python_version=$(cat .python-version)
-        eval "$(pyenv init -)"
-        pyenv shell $python_version
-        if [ ! -d "venv" ]; then
-            python -m venv venv
-        fi
-        source venv/bin/activate
-        pip install -r ../../base_requirements.txt
-    fi
-
-    source ./init.sh
-
-    cd ../../
-
-    export PYTHONPATH=$PYTHONPATH:.:$WRAPPER_PATH
-
-    python -u $CMD --multirun +experiment=$HYDRA_EXPERIMENT ++cache=$CACHE
-
-    echo "Done"
-}
-
-delete() {
-    rm -rf $WRAPPER_PATH/venv
-}
-
-if [ -z "$WRAPPER_PATH" ]; then
-    echo "Please provide the path to the wrapper"
-    exit 1
+FRAMEWORK="huggingface"
+if [ -n "$WRAPPER_PATH" ]; then
+    FRAMEWORK=$(basename "$WRAPPER_PATH")
 fi
 
-if $DELETE; then
-    delete
-else
-    run
-fi
+uv run python embed.py --framework "$FRAMEWORK" "${EXTRA_ARGS[@]}"

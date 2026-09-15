@@ -36,12 +36,14 @@ try:
         return idx
     
     def get_device(device: Optional[str] = None, optimize_gpu_distribution: bool = True) -> torch.device:
-        if device is None:
+        if device is None or (isinstance(device, str) and device.lower() in ("auto", "none", "")):
             if torch.cuda.is_available():
                 if optimize_gpu_distribution:
                     device = f"cuda:{get_least_utilized_gpu()}"
                 else:
                     device = "cuda"
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                device = "mps"
             else:
                 device = "cpu"
             log.warning(f"Using device: {device}")

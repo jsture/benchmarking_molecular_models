@@ -1,0 +1,34 @@
+# Repository Guidelines
+
+## Project Structure & Module Organization
+
+The benchmark follows download → embed → score, with root entry points `download.py`, `embed.py`, and `score.py` powered by standard Python `argparse` CLIs. Shared dataset types, typed dataset registries, serialization, and file-based result storage live in `src/common/`; embedding orchestration lives in `src/embedding/`; supervised evaluation lives in `src/eval/`.
+
+Benchmark dataset configurations live in `src/common/datasets.py` (covering 26 TDC ADMET and OGB MoleculeNet tasks). Model implementations live in `model_wrappers/` (`huggingface` and `pytorch`). `docs/custom_model.md` explains custom model extensions.
+
+## Build, Test, and Development Commands
+
+Use Python 3.11 (supported range: 3.10–3.11) and `uv` for dependency and environment management. Run commands from the repository root:
+
+- `uv venv --python 3.11 .venv && source .venv/bin/activate`: create and activate the benchmark virtual environment.
+- `bash install_deps.sh` or `uv pip install -r requirements.txt`: install benchmark requirements.
+- `uv run python download.py --dataset DILI`: download configured benchmark dataset(s).
+- `uv run python embed.py --model DeepChem/ChemBERTa-10M-MLM --dataset DILI`: generate embeddings for dataset(s).
+- `bash embed_wrapper.sh model_wrappers/huggingface --model DeepChem/ChemBERTa-10M-MLM --dataset DILI`: wrapper script for embedding.
+- `uv run python score.py --model ChemBERTa-10M-MLM --dataset DILI`: train and evaluate configured supervised heads.
+
+Parallel scoring concurrency is controlled directly via `--n-jobs <N>` in `score.py` using `joblib.Parallel`.
+
+## Coding Style & Naming Conventions
+
+Follow four-space Python indentation, `snake_case` functions/modules, and `PascalCase` classes.
+
+New wrappers implement `SmilesEmbedder`, expose `get_embedder()`, and return an `(N, D)` NumPy array. Preserve input order and represent failed samples with NaN rows. Keep model names unique and consistent.
+
+## Testing Guidelines
+
+Validate changes with a small configured dataset through download, embedding, and scoring (e.g. `DILI` or `ogbg-molhiv`). Check embedding dimensions, sample alignment, failed-sample handling, and results stored in `data/results/` and `data/results.csv`.
+
+## Commit & Pull Request Guidelines
+
+Keep commits concise and descriptive (e.g. `Remove Hydra in favor of typed dataset registry and argparse CLI`). Keep credentials, virtual environments, downloaded datasets, and large model weights out of commits.
